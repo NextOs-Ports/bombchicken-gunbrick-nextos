@@ -1,0 +1,53 @@
+{
+  "schema": "nxadapter-contract-v1",
+  "schema_version": 1,
+  "port_id": "gunbrick",
+  "engine": "Unity 2022.3 IL2CPP",
+  "architecture": "aarch64",
+  "status": "release-validated",
+  "release_ready": true,
+  "lifecycle": {
+    "policy": "preserve_native_android_order",
+    "sequence": [
+      "load-libmain",
+      "load-libunity",
+      "load-libil2cpp",
+      "relocate-local",
+      "resolve-strict",
+      "init-arrays",
+      "jni-onload-1.6",
+      "native-loader-readiness",
+      "init-jni",
+      "surface-created",
+      "surface-changed",
+      "focus-gained",
+      "resume",
+      "render-loop",
+      "focus-lost",
+      "pause"
+    ]
+  },
+  "input": {
+    "implementation": "nxinput",
+    "mapping": "PortMaster control mapping through the native Android controller API",
+    "optional_quirk": "game.gunbrick.swipe-input"
+  },
+  "graphics": {
+    "selection": "capability-first",
+    "primary": "sdl-gles2",
+    "fallback": "raw-egl-after-real-failure",
+    "forced_backend_environment": false,
+    "global_alpha_override": false,
+    "global_texture_wrap_override": false
+  },
+  "physical_device_evidence": true,
+  "release_ready_evidence": [
+    "nxextract-ui-visible-on-three-targets",
+    "video-audio-controller-gameplay-on-three-targets"
+  ],
+  "prohibitions": [
+    "no-RVA-patches",
+    "no-lifecycle-shortcuts",
+    "no-proprietary-data-in-public-package"
+  ]
+}

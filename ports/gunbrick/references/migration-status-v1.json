@@ -1,0 +1,39 @@
+{
+  "schema": "gunbrick-migration-status-v1",
+  "schema_version": 1,
+  "port_id": "gunbrick",
+  "release_version": "0.2.0",
+  "framework": {
+    "nxport_schema": 2,
+    "nxbootstrap": "0.6.0",
+    "nxextract": "1.2.6",
+    "nxrelease": "0.2.5"
+  },
+  "host_evidence": {
+    "strict_cross_compile": true,
+    "universal_elf_aarch64": true,
+    "maximum_glibc": "2.27",
+    "rwx_load_segment": false,
+    "rpath_or_runpath": false,
+    "proprietary_payload_packaged": false
+  },
+  "physical_device_evidence": true,
+  "validated_targets": [
+    "NextOS Mali-450 framebuffer",
+    "NextOS X5M KMSDRM Mali-G310",
+    "NextOS Ark KMSDRM Mali-G31"
+  ],
+  "validated_flow": [
+    "clean-extraction-ui",
+    "transactional-owner-data-install",
+    "video",
+    "audible-audio",
+    "controller",
+    "rendered-gameplay",
+    "clean-exit"
+  ],
+  "release_blocker": {
+    "active": false,
+    "reason": "The supported v10 payload is sealed by exact asset-tree and native-library content pins."
+  }
+}
