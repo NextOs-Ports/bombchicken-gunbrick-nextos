@@ -10,6 +10,7 @@
 
 #define _GNU_SOURCE
 #include <SDL2/SDL.h>
+#include <limits.h>
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -20,11 +21,36 @@
 #include "nx_elf.h"
 #include "gb.h"
 #include "framework_bridge.h"
+#include "jni_refs.h"
 
 static pthread_t audio_thread;
-static void *audio_env;
 static int audio_run;
 static int audio_started;
+
+typedef int (*fmod_process_fn)(void *, void *, void *);
+typedef int (*fmod_get_info_fn)(void *, void *, int);
+
+static int fmod_process_scoped(fmod_process_fn function, void *env,
+                               void *device, void *bytebuffer)
+{
+    int scope = gb_jni_ref_scope_begin();
+    if (scope < 0)
+        return -1;
+    int result = function(env, device, bytebuffer);
+    gb_jni_ref_scope_end(scope);
+    return result;
+}
+
+static int fmod_get_info_scoped(fmod_get_info_fn function, void *env,
+                                void *device, int selector)
+{
+    int scope = gb_jni_ref_scope_begin();
+    if (scope < 0)
+        return INT_MIN;
+    int result = function(env, device, selector);
+    gb_jni_ref_scope_end(scope);
+    return result;
+}
 
 static int silent_driver(const char *name)
 {
@@ -68,8 +94,7 @@ static SDL_AudioDeviceID open_audio(const SDL_AudioSpec *want,
 static void *audio_main(void *unused)
 {
     (void)unused;
-    typedef int (*fmod_process_fn)(void *, void *, void *);
-    typedef int (*fmod_get_info_fn)(void *, void *, int);
+    void *thread_env = gb_jni_env();
     fmod_process_fn fmod_process = NULL;
     fmod_get_info_fn fmod_get_info = NULL;
 
@@ -102,15 +127,15 @@ static void *audio_main(void *unused)
 
     while (__atomic_load_n(&audio_run, __ATOMIC_ACQUIRE)) {
         if (!gb_jni_fmod_should_run() ||
-            fmod_get_info(audio_env, device, 3) != 1) {
+            fmod_get_info_scoped(fmod_get_info, thread_env, device, 3) != 1) {
             usleep(10000);
             continue;
         }
 
-        int rate = fmod_get_info(audio_env, device, 0);
-        int block = fmod_get_info(audio_env, device, 1);
-        int buffers = fmod_get_info(audio_env, device, 2);
-        int channels = fmod_get_info(audio_env, device, 4);
+        int rate = fmod_get_info_scoped(fmod_get_info, thread_env, device, 0);
+        int block = fmod_get_info_scoped(fmod_get_info, thread_env, device, 1);
+        int buffers = fmod_get_info_scoped(fmod_get_info, thread_env, device, 2);
+        int channels = fmod_get_info_scoped(fmod_get_info, thread_env, device, 4);
         int64_t byte_count =
             (int64_t)block * channels * (int)sizeof(int16_t);
         if (rate < 8000 || rate > 192000 ||
@@ -169,9 +194,11 @@ static void *audio_main(void *unused)
         unsigned long calls = 0;
         while (__atomic_load_n(&audio_run, __ATOMIC_ACQUIRE) &&
                gb_jni_fmod_should_run() &&
-               fmod_get_info(audio_env, device, 3) == 1 &&
+               fmod_get_info_scoped(
+                   fmod_get_info, thread_env, device, 3) == 1 &&
                SDL_GetQueuedAudioSize(output) < target) {
-            int result = fmod_process(audio_env, device, bytebuffer);
+            int result = fmod_process_scoped(
+                fmod_process, thread_env, device, bytebuffer);
             if (result != 0 ||
                 SDL_QueueAudio(output, pcm, (Uint32)bytes) != 0)
                 break;
@@ -191,17 +218,22 @@ static void *audio_main(void *unused)
 
         while (__atomic_load_n(&audio_run, __ATOMIC_ACQUIRE) &&
                gb_jni_fmod_should_run() &&
-               fmod_get_info(audio_env, device, 3) == 1) {
+               fmod_get_info_scoped(
+                   fmod_get_info, thread_env, device, 3) == 1) {
             if ((calls & 255UL) == 0 &&
-                (fmod_get_info(audio_env, device, 0) != rate ||
-                 fmod_get_info(audio_env, device, 1) != block ||
-                 fmod_get_info(audio_env, device, 4) != channels))
+                (fmod_get_info_scoped(
+                     fmod_get_info, thread_env, device, 0) != rate ||
+                 fmod_get_info_scoped(
+                     fmod_get_info, thread_env, device, 1) != block ||
+                 fmod_get_info_scoped(
+                     fmod_get_info, thread_env, device, 4) != channels))
                 break;
             if (SDL_GetQueuedAudioSize(output) >= target) {
                 usleep(1000);
                 continue;
             }
-            int result = fmod_process(audio_env, device, bytebuffer);
+            int result = fmod_process_scoped(
+                fmod_process, thread_env, device, bytebuffer);
             if (result == 0) {
                 int peak = trace
                     ? pcm_peak_s16(pcm, bytes / (int)sizeof(int16_t)) : 0;
@@ -227,11 +259,11 @@ static void *audio_main(void *unused)
 
 int gb_audio_start(void *env)
 {
+    (void)env;
     if (getenv("GB_NO_AUDIO"))
         return 0;
     if (audio_started)
         return 1;
-    audio_env = env;
     __atomic_store_n(&audio_run, 1, __ATOMIC_RELEASE);
     int rc = pthread_create(&audio_thread, NULL, audio_main, NULL);
     if (rc != 0) {

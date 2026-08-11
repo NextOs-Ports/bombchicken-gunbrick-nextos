@@ -338,8 +338,12 @@ void gb_input_poll(void *env, void *player, unsigned long frame)
     if (slot < 0 ||
         nxinput_get_pad(gb_input, (unsigned)slot, &pad) == 0 ||
         !pad.connected) {
-        if (gb_previous_connected)
+        if (gb_previous_connected) {
             gb_release_buttons(env, player);
+            gb_inject(env, player,
+                      gb_jni_motion_event(0.0f, 0.0f, 0.0f, 0.0f,
+                                          0.0f, 0.0f, 0, 0));
+        }
         gb_previous_connected = 0;
         gb_finish_swipe(env, player);
         return;

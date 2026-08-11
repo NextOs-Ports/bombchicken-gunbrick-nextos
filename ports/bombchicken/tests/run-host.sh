@@ -38,7 +38,7 @@ REL_WORK=${WORK_ROOT#"$PORT_DIR"/}
 bash -n "$PORT_DIR/build.sh"
 bash -n "$PORT_DIR/nxextract/nxextract-runtime-env.sh"
 bash -n "$PORT_DIR/nxextract/run-extractor.sh"
-# 0.6.0: single self-contained launcher; the 0.5.1 library, its migration
+# 0.6.3: single self-contained launcher; the 0.5.1 library, its migration
 # helper and the overlay test are retired.
 if [[ ${BC_PREFREEZE:-0} != 1 ]]; then
   bash -n "$PORT_DIR/Bomb Chicken.sh"

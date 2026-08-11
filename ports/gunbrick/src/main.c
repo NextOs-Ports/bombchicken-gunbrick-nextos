@@ -20,9 +20,11 @@
 #include <ucontext.h>
 #include <sys/file.h>
 #include <fcntl.h>
+#include <malloc.h>
 
 #include "nx_elf.h"
 #include "gb.h"
+#include "jni_refs.h"
 #include "framework_bridge.h"
 
 char gb_gamedir[1024];
@@ -302,6 +304,62 @@ static void gb_install_shutdown_guards(void)
     alarm(5); /* the safe part already ran; never hang the frontend */
 }
 
+static int jni_scope_begin_or_die(void)
+{
+    int token = gb_jni_ref_scope_begin();
+    if (token < 0)
+        nx_die("fake JNI local-frame stack exhausted");
+    return token;
+}
+
+typedef struct gb_memory_snapshot {
+    unsigned long available_kib;
+    unsigned long swap_free_kib;
+    unsigned long swap_total_kib;
+} gb_memory_snapshot;
+
+/* Android delivers Activity.onLowMemory/onTrimMemory to Unity when the host
+ * approaches its memory limit.  A native Linux launcher has no Activity, so
+ * reproduce that platform callback from live pressure evidence instead of
+ * letting the Mali allocation which loads the next scene become the OOM
+ * trigger.  This is deliberately sampled between render frames; Unity's
+ * nativeLowMemory must run on the same player/GL thread as nativeRender. */
+static int gb_memory_snapshot_read(gb_memory_snapshot *snapshot)
+{
+    FILE *stream;
+    char line[160];
+
+    if (!snapshot)
+        return -1;
+    memset(snapshot, 0, sizeof *snapshot);
+    stream = fopen("/proc/meminfo", "r");
+    if (!stream)
+        return -1;
+    while (fgets(line, sizeof line, stream)) {
+        if (strncmp(line, "MemAvailable:", 13) == 0)
+            snapshot->available_kib = strtoul(line + 13, NULL, 10);
+        else if (strncmp(line, "SwapFree:", 9) == 0)
+            snapshot->swap_free_kib = strtoul(line + 9, NULL, 10);
+        else if (strncmp(line, "SwapTotal:", 10) == 0)
+            snapshot->swap_total_kib = strtoul(line + 10, NULL, 10);
+    }
+    fclose(stream);
+    return snapshot->available_kib != 0 ? 0 : -1;
+}
+
+static unsigned long gb_env_kib(const char *name, unsigned long fallback)
+{
+    const char *value = getenv(name);
+    char *end = NULL;
+    unsigned long parsed;
+
+    if (!value || !*value)
+        return fallback;
+    errno = 0;
+    parsed = strtoul(value, &end, 10);
+    return errno == 0 && end && *end == '\0' ? parsed : fallback;
+}
+
 static void run_unity(void)
 {
     void *env = gb_jni_env();
@@ -316,7 +374,9 @@ static void run_unity(void)
     if (!fn)
         nx_die("Unity did not register initJni");
     fprintf(stderr, "[gunbrick] initJni...\n");
+    int scope = jni_scope_begin_or_die();
     ((void (*)(void *, void *, void *))fn)(env, player, activity);
+    gb_jni_ref_scope_end(scope);
     fprintf(stderr, "[gunbrick] initJni OK\n");
 
     fn = gb_jni_native("com/unity3d/player/UnityPlayer",
@@ -324,7 +384,9 @@ static void run_unity(void)
     if (!fn)
         nx_die("Unity did not register nativeRecreateGfxState");
     fprintf(stderr, "[gunbrick] nativeRecreateGfxState(surfaceCreated)...\n");
+    scope = jni_scope_begin_or_die();
     ((void (*)(void *, void *, int, void *))fn)(env, player, 0, surface);
+    gb_jni_ref_scope_end(scope);
     fprintf(stderr, "[gunbrick] nativeRecreateGfxState(surfaceCreated) OK\n");
 
     /* UnityPlayer's SurfaceHolder callback immediately repeats updateGLDisplay
@@ -332,25 +394,33 @@ static void run_unity(void)
      * change.  Preserve that ordering even though both callbacks carry the
      * same native Surface in the fbdev host. */
     fprintf(stderr, "[gunbrick] nativeRecreateGfxState(surfaceChanged)...\n");
+    scope = jni_scope_begin_or_die();
     ((void (*)(void *, void *, int, void *))fn)(env, player, 0, surface);
+    gb_jni_ref_scope_end(scope);
     fprintf(stderr, "[gunbrick] nativeRecreateGfxState(surfaceChanged) OK\n");
 
     fn = gb_jni_native("com/unity3d/player/UnityPlayer",
                         "nativeSendSurfaceChangedEvent");
     if (fn) {
+        scope = jni_scope_begin_or_die();
         ((void (*)(void *, void *))fn)(env, player);
+        gb_jni_ref_scope_end(scope);
         fprintf(stderr, "[gunbrick] nativeSendSurfaceChangedEvent OK\n");
     }
 
     fn = gb_jni_native("com/unity3d/player/UnityPlayer",
                         "nativeFocusChanged");
     if (fn) {
+        scope = jni_scope_begin_or_die();
         ((void (*)(void *, void *, int))fn)(env, player, 1);
+        gb_jni_ref_scope_end(scope);
         fprintf(stderr, "[gunbrick] nativeFocusChanged(true) OK\n");
     }
     fn = gb_jni_native("com/unity3d/player/UnityPlayer", "nativeResume");
     if (fn) {
+        scope = jni_scope_begin_or_die();
         ((void (*)(void *, void *))fn)(env, player);
+        gb_jni_ref_scope_end(scope);
         fprintf(stderr, "[gunbrick] nativeResume OK\n");
     }
 
@@ -360,13 +430,24 @@ static void run_unity(void)
                                   "nativeRender");
     if (!render)
         nx_die("Unity did not register nativeRender");
+    void *low_memory = gb_jni_native("com/unity3d/player/UnityPlayer",
+                                     "nativeLowMemory");
     fprintf(stderr, "[gunbrick] nativeRender loop%s\n",
             gb_max_frames > 0 ? " (test frame limit active)" : "");
+    fprintf(stderr, "[gunbrick/memory] Android low-memory callback %s\n",
+            low_memory ? "ready" : "not registered");
 
     if (gb_input_init() != 0)
         nx_die("nxinput initialization failed");
 
     unsigned long frame = 0;
+    unsigned long last_low_memory_frame = 0;
+    const unsigned long low_memory_kib =
+        gb_env_kib("GB_LOWMEM_KB", 128UL * 1024UL);
+    const unsigned long low_swap_kib =
+        gb_env_kib("GB_LOWMEM_SWAP_KB", 64UL * 1024UL);
+    const unsigned long low_memory_cooldown =
+        gb_env_kib("GB_LOWMEM_COOLDOWN_FRAMES", 900UL);
     int framework_ready = 0;
     const char *frame_us_env = getenv("GB_FRAME_US");
     long frame_budget_us = frame_us_env && *frame_us_env
@@ -377,12 +458,40 @@ static void run_unity(void)
     clock_gettime(CLOCK_MONOTONIC, &fps_mark);
     for (;;) {
         clock_gettime(CLOCK_MONOTONIC, &frame_start);
+        scope = jni_scope_begin_or_die();
+        int requested_low_memory = 0;
+        gb_memory_snapshot memory;
+        if (low_memory && low_memory_kib != 0 && frame != 0 &&
+            frame % 120UL == 0 &&
+            gb_memory_snapshot_read(&memory) == 0) {
+            int ram_low = memory.available_kib < low_memory_kib;
+            int swap_low = memory.swap_total_kib != 0 &&
+                           memory.swap_free_kib < low_swap_kib;
+            int cooled_down = last_low_memory_frame == 0 ||
+                              frame - last_low_memory_frame >=
+                                  low_memory_cooldown;
+            if ((ram_low || swap_low) && cooled_down) {
+                fprintf(stderr,
+                        "[gunbrick/memory] pressure avail=%luMiB "
+                        "swap=%lu/%luMiB -> nativeLowMemory (frame %lu)\n",
+                        memory.available_kib / 1024UL,
+                        memory.swap_free_kib / 1024UL,
+                        memory.swap_total_kib / 1024UL, frame);
+                ((void (*)(void *, void *))low_memory)(env, player);
+                last_low_memory_frame = frame;
+                requested_low_memory = 1;
+            }
+        }
+        if (requested_low_memory)
+            (void)malloc_trim(0);
         gb_input_poll(env, player, frame);
         if (gb_input_exit_requested()) {
+            gb_jni_ref_scope_end(scope);
             fprintf(stderr, "[gunbrick] controller requested lifecycle exit\n");
             break;
         }
         uint8_t keep = ((uint8_t (*)(void *, void *))render)(env, player);
+        gb_jni_ref_scope_end(scope);
         frame++;
         if (!framework_ready &&
             (frame == 1 || frame == 30 || frame == 120)) {
@@ -440,12 +549,16 @@ static void run_unity(void)
 
     fn = gb_jni_native("com/unity3d/player/UnityPlayer", "nativeFocusChanged");
     if (fn) {
+        scope = jni_scope_begin_or_die();
         ((void (*)(void *, void *, int))fn)(env, player, 0);
+        gb_jni_ref_scope_end(scope);
         fprintf(stderr, "[gunbrick] nativeFocusChanged(false) OK\n");
     }
     fn = gb_jni_native("com/unity3d/player/UnityPlayer", "nativePause");
     if (fn) {
+        scope = jni_scope_begin_or_die();
         ((void (*)(void *, void *))fn)(env, player);
+        gb_jni_ref_scope_end(scope);
         fprintf(stderr, "[gunbrick] nativePause OK\n");
     }
     gb_input_close();
@@ -512,7 +625,11 @@ int main(int argc, char **argv)
     if (nx_run_init(main_mod) != 0)
         nx_die("libmain.so initializer transaction failed");
     int32_t main_version = 0;
-    if (nx_call_jni_onload(main_mod, gb_jni_vm(), &main_version) != 0)
+    int jni_scope = jni_scope_begin_or_die();
+    int onload_result =
+        nx_call_jni_onload(main_mod, gb_jni_vm(), &main_version);
+    gb_jni_ref_scope_end(jni_scope);
+    if (onload_result != 0)
         nx_die("JNI_OnLoad(libmain.so) rejected");
     fprintf(stderr, "[gunbrick] JNI_OnLoad(libmain.so) -> %#x\n", main_version);
 
@@ -526,11 +643,13 @@ int main(int argc, char **argv)
         nx_die("libmain did not register NativeLoader.load");
     char libdir[1200];
     join_path(libdir, sizeof libdir, gb_gamedir, "lib", NULL);
+    jni_scope = jni_scope_begin_or_die();
     void *loader_class =
         gb_jret_class("com/unity3d/player/NativeLoader");
     void *loader_path = gb_jret_str(libdir);
     int loaded = ((int (*)(void *, void *, void *))native_load)(
         gb_jni_env(), loader_class, loader_path);
+    gb_jni_ref_scope_end(jni_scope);
     if (!loaded || !uni->ready || !il2->ready)
         nx_die("NativeLoader.load failed (result=%d unity_ready=%d il2cpp_ready=%d)",
                loaded, uni->ready, il2->ready);

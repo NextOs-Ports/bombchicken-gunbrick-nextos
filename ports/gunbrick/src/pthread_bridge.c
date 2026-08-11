@@ -232,16 +232,26 @@ static int b_rwlock_trywrlock(void *o) { return pthread_rwlock_trywrlock(R(o)); 
 
 /* -------------------------------------------------------------- semaphore */
 
-/* bionic's sem_t is a single int, so there is no room for a handle: keep a
- * small table keyed by the address the game gave us. */
-#define SEM_MAX 512
-static struct { void *key; sem_t *s; } sems[SEM_MAX];
-static int sem_n;
+/* bionic's sem_t is a single int, so there is no room for a handle. Keep a
+ * dynamically-sized table keyed by the guest address. The old fixed 512-entry
+ * table eventually overflowed during repeated Unity scene activity; every
+ * lookup beyond that point made a fresh untracked sem_t and leaked it.
+ *
+ * sem_destroy intentionally remains a no-op. This Unity build can reuse the
+ * same guest address while another engine thread still has the translated
+ * host pointer. Removing/freeing that mapping loses wake-ups and caused the
+ * black-screen regression in the first memory-fix test. Keeping one stable
+ * mapping per observed guest address is bounded by the dynamic table and
+ * preserves the already-working lifecycle. */
+typedef struct { void *key; sem_t *s; } sem_entry;
+static sem_entry *sems;
+static size_t sem_n;
+static size_t sem_capacity;
 
 static sem_t *S(void *o, unsigned initial, int creating)
 {
     pthread_mutex_lock(&bridge_lock);
-    for (int i = 0; i < sem_n; i++)
+    for (size_t i = 0; i < sem_n; i++)
         if (sems[i].key == o) {
             sem_t *s = sems[i].s;
             if (creating) {
@@ -255,34 +265,79 @@ static sem_t *S(void *o, unsigned initial, int creating)
             return s;
         }
     sem_t *s = calloc(1, sizeof *s);
-    sem_init(s, 0, initial);
-    if (sem_n < SEM_MAX) {
-        sems[sem_n].key = o;
-        sems[sem_n].s = s;
-        sem_n++;
-    } else {
-        nx_log("semaphore table full");
+    if (!s || sem_init(s, 0, initial) != 0) {
+        free(s);
+        pthread_mutex_unlock(&bridge_lock);
+        errno = ENOMEM;
+        return NULL;
     }
+    if (sem_n == sem_capacity) {
+        size_t next_capacity = sem_capacity ? sem_capacity * 2 : 64;
+        if (next_capacity < sem_capacity ||
+            next_capacity > SIZE_MAX / sizeof(*sems)) {
+            sem_destroy(s);
+            free(s);
+            pthread_mutex_unlock(&bridge_lock);
+            errno = ENOMEM;
+            return NULL;
+        }
+        sem_entry *grown = realloc(sems, next_capacity * sizeof(*sems));
+        if (!grown) {
+            sem_destroy(s);
+            free(s);
+            pthread_mutex_unlock(&bridge_lock);
+            errno = ENOMEM;
+            return NULL;
+        }
+        sems = grown;
+        sem_capacity = next_capacity;
+    }
+    sems[sem_n].key = o;
+    sems[sem_n].s = s;
+    sem_n++;
     pthread_mutex_unlock(&bridge_lock);
     return s;
 }
 
-static int b_sem_init(void *o, int pshared, unsigned v) { (void)pshared; S(o, v, 1); return 0; }
-static int b_sem_destroy(void *o) { (void)o; return 0; }   /* keep the mapping alive */
-static int b_sem_post(void *o)    { return sem_post(S(o, 0, 0)); }
+static int b_sem_init(void *o, int pshared, unsigned v)
+{
+    (void)pshared;
+    return S(o, v, 1) ? 0 : -1;
+}
+static int b_sem_destroy(void *o)
+{
+    (void)o;
+    return 0;
+}
+static int b_sem_post(void *o)
+{
+    sem_t *s = S(o, 0, 0);
+    return s ? sem_post(s) : -1;
+}
 static int b_sem_wait(void *o)
 {
     sem_t *s = S(o, 0, 0);
     int r;
+    if (!s)
+        return -1;
     do { r = sem_wait(s); } while (r == -1 && errno == EINTR);
     return r;
 }
-static int b_sem_trywait(void *o) { return sem_trywait(S(o, 0, 0)); }
+static int b_sem_trywait(void *o)
+{
+    sem_t *s = S(o, 0, 0);
+    return s ? sem_trywait(s) : -1;
+}
 static int b_sem_timedwait(void *o, const struct timespec *ts)
 {
-    return sem_timedwait(S(o, 0, 0), ts);
+    sem_t *s = S(o, 0, 0);
+    return s ? sem_timedwait(s, ts) : -1;
 }
-static int b_sem_getvalue(void *o, int *v) { return sem_getvalue(S(o, 0, 0), v); }
+static int b_sem_getvalue(void *o, int *v)
+{
+    sem_t *s = S(o, 0, 0);
+    return s ? sem_getvalue(s, v) : -1;
+}
 
 /* -------------------------------------------------------------------- attr */
 

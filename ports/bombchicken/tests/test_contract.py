@@ -327,7 +327,7 @@ def check_build_policy() -> None:
 
 
 def check_public_tree() -> None:
-    require(read_text("version.txt").strip() == "1.1.2", "port version drift")
+    require(read_text("version.txt").strip() == "1.1.4", "port version drift")
     for legacy in ("run.sh", "es_map.sh", "es2sdl.awk"):
         require(not (PORT / legacy).exists(), f"legacy helper remains: {legacy}")
     for path in PORT.rglob("*"):
@@ -386,7 +386,7 @@ def check_public_tree() -> None:
 
 
 def check_generated_framework() -> None:
-    # 0.6.0: a single self-contained launcher. No bootstrap library, no
+    # 0.6.3: a single self-contained launcher. No bootstrap library, no
     # deployment receipt, no legacy migration helper.
     launcher = PORT / "Bomb Chicken.sh"
     require(launcher.is_file() and not launcher.is_symlink(),
@@ -396,13 +396,17 @@ def check_generated_framework() -> None:
         require(not (PORT / retired).exists(),
                 f"retired 0.5.1 artifact still present: {retired}")
     launcher_text = launcher.read_text(encoding="utf-8")
-    require("nxbootstrap 0.6.0" in launcher_text,
-            "launcher does not record the 0.6.0 generator")
+    require("nxbootstrap 0.6.3" in launcher_text,
+            "launcher does not record the 0.6.3 generator")
     require("run.sh" not in launcher_text, "launcher references legacy run.sh")
     for guarantee in ("flock -n 9", 'wait "$game_pid"', "nxbootstrap_finish",
-                      "pm_finish"):
+                      "pm_finish", "command ls -Lldn /proc/self/fd/9",
+                      '"$NXBOOTSTRAP_LOCK_FILE" -ef /proc/self/fd/9'):
         require(guarantee in launcher_text,
                 f"launcher lacks golden-port guarantee: {guarantee}")
+    require("stat -L -c" not in launcher_text and
+            "stat -L -t" not in launcher_text,
+            "launcher regained an external stat dependency")
 
 
 def check_release_manifest() -> None:
@@ -411,13 +415,13 @@ def check_release_manifest() -> None:
     require(release_version.read_text(encoding="utf-8").strip() == "0.2.5",
             "NXRelease version differs from the frozen package gate")
     require(sha256(release_tool) ==
-            "dd307d3e18cd926be2cc51c2a7e9948193b3c309abcc414dfa8d784332df57ee",
+            "097ef954261d7e31fb4a759caf2ebda9be02f069b1968e3f7b379d92f51e732f",
             "NXRelease 0.2.5 implementation pin drift")
     package_script = read_text("package/build-package.sh")
     require("NXRELEASE_VERSION=0.2.5" in package_script,
             "package script does not pin NXRelease 0.2.5")
     require("NXRELEASE_SHA256="
-            "dd307d3e18cd926be2cc51c2a7e9948193b3c309abcc414dfa8d784332df57ee"
+            "097ef954261d7e31fb4a759caf2ebda9be02f069b1968e3f7b379d92f51e732f"
             in package_script,
             "package script does not pin the NXRelease 0.2.5 implementation")
     release = load_json("nxrelease.json")
@@ -425,7 +429,7 @@ def check_release_manifest() -> None:
     require(release.get("source_root") == ".", "NXRelease source_root drift")
     package = release.get("package", {})
     require(package.get("id") == "bombchicken", "release package id drift")
-    require(package.get("version") == "1.1.2", "release package version drift")
+    require(package.get("version") == "1.1.4", "release package version drift")
     require(package.get("profile") == "universal-portmaster",
             "release profile drift")
     require(package.get("launcher") == "Bomb Chicken.sh",
@@ -433,7 +437,7 @@ def check_release_manifest() -> None:
     require(package.get("launcher_chain") == ["Bomb Chicken.sh"],
             "release launcher chain drift")
     launcher_contract = package.get("launcher_contract", {})
-    require(launcher_contract.get("version") == "0.6.0",
+    require(launcher_contract.get("version") == "0.6.3",
             "release bootstrap version drift")
     require(launcher_contract.get("config_sha256") == sha256(PORT / "nxport.json"),
             "release nxport pin is stale")

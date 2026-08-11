@@ -25,6 +25,7 @@
 
 #include "nx_elf.h"
 #include "gb.h"
+#include "jni_refs.h"
 #include "jni_slots.h"
 
 int gb_trace_jni = 0;
@@ -39,8 +40,9 @@ typedef enum {
 } otype;
 
 typedef struct jobj {
+    gb_jni_ref_header ref;
     otype type;
-    const char *cls;         /* class name for O_OBJECT / O_CLASS */
+    char *cls;               /* class name for O_OBJECT / O_CLASS, owned */
     char *str;               /* O_STRING payload (UTF-8, owned) */
     void *data;              /* array payload */
     int len;
@@ -49,28 +51,71 @@ typedef struct jobj {
     int boxed;
 } jobj;
 
-static jobj *new_obj(otype t, const char *cls)
+static void destroy_obj(void *object)
+{
+    jobj *o = object;
+    if (!o)
+        return;
+    if (o->type == O_OBJARRAY && o->elems) {
+        for (int i = 0; i < o->len; i++)
+            gb_jni_ref_release(o->elems[i]);
+        free(o->elems);
+    } else if (o->type == O_BYTEARRAY) {
+        free(o->data);
+    }
+    free(o->cls);
+    free(o->str);
+    free(o);
+}
+
+static jobj *alloc_obj(otype t, const char *cls, int permanent)
 {
     jobj *o = calloc(1, sizeof *o);
+    if (!o)
+        nx_die("cannot allocate fake JNI object");
+    if (cls) {
+        o->cls = strdup(cls);
+        if (!o->cls) {
+            free(o);
+            nx_die("cannot copy fake JNI class name");
+        }
+    }
+    if (gb_jni_ref_init(o, permanent, destroy_obj) != 0) {
+        free(o->cls);
+        free(o);
+        nx_die("cannot track fake JNI object");
+    }
     o->type = t;
-    o->cls = cls;
     return o;
+}
+
+static jobj *new_obj(otype t, const char *cls)
+{
+    return alloc_obj(t, cls, gb_jni_ref_scope_depth() == 0);
 }
 
 static jobj *mk_class(const char *name)
 {
     /* Classes are interned so IsSameObject and the method tables work. */
     static jobj *cache[256];
-    static const char *names[256];
     static int n;
-    for (int i = 0; i < n; i++)
-        if (strcmp(names[i], name) == 0)
-            return cache[i];
+    static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+    const char *class_name = name ? name : "java/lang/Object";
+
+    pthread_mutex_lock(&lock);
+    for (int i = 0; i < n; i++) {
+        if (strcmp(cache[i]->cls, class_name) == 0) {
+            jobj *found = cache[i];
+            pthread_mutex_unlock(&lock);
+            return found;
+        }
+    }
     if (n == 256)
-        nx_die("class cache full (%s)", name);
-    names[n] = strdup(name);
-    cache[n] = new_obj(O_CLASS, names[n]);
-    return cache[n++];
+        nx_die("class cache full (%s)", class_name);
+    cache[n] = alloc_obj(O_CLASS, class_name, 1);
+    jobj *created = cache[n++];
+    pthread_mutex_unlock(&lock);
+    return created;
 }
 
 static jobj *mk_string(const char *s)
@@ -289,6 +334,7 @@ typedef struct {
 #define MAX_METHODS 1024
 static jmethod methods[MAX_METHODS];
 static int method_n;
+static pthread_mutex_t methods_lock = PTHREAD_MUTEX_INITIALIZER;
 
 typedef struct {
     void *env;
@@ -337,31 +383,40 @@ static float jarg_float(jctx *c)
 
 static void *method_id(const char *cls, const char *name, const char *sig)
 {
-    for (int i = 0; i < method_n; i++)
+    pthread_mutex_lock(&methods_lock);
+    int count = __atomic_load_n(&method_n, __ATOMIC_ACQUIRE);
+    for (int i = 0; i < count; i++)
         if (strcmp(methods[i].name, name) == 0 &&
             strcmp(methods[i].sig, sig) == 0 &&
-            (!cls || !methods[i].cls || strcmp(methods[i].cls, cls) == 0))
+            (!cls || !methods[i].cls || strcmp(methods[i].cls, cls) == 0)) {
+            pthread_mutex_unlock(&methods_lock);
             return (void *)(uintptr_t)(i + 1);
-    if (method_n == MAX_METHODS)
+        }
+    if (count == MAX_METHODS)
         nx_die("method table full");
-    methods[method_n].cls = cls ? strdup(cls) : NULL;
-    methods[method_n].name = strdup(name);
-    methods[method_n].sig = strdup(sig);
-    methods[method_n].handler = NULL;
-    JT("new method id %d %s.%s%s", method_n + 1, cls ? cls : "?", name, sig);
-    return (void *)(uintptr_t)(++method_n);
+    methods[count].cls = cls ? strdup(cls) : NULL;
+    methods[count].name = strdup(name);
+    methods[count].sig = strdup(sig);
+    methods[count].handler = NULL;
+    JT("new method id %d %s.%s%s", count + 1,
+       cls ? cls : "?", name, sig);
+    __atomic_store_n(&method_n, count + 1, __ATOMIC_RELEASE);
+    pthread_mutex_unlock(&methods_lock);
+    return (void *)(uintptr_t)(count + 1);
 }
 
 static const jmethod *by_id(void *mid)
 {
     uintptr_t i = (uintptr_t)mid;
-    return (i >= 1 && i <= (uintptr_t)method_n) ? &methods[i - 1] : NULL;
+    int count = __atomic_load_n(&method_n, __ATOMIC_ACQUIRE);
+    return (i >= 1 && i <= (uintptr_t)count) ? &methods[i - 1] : NULL;
 }
 
 void gb_jni_bind(const char *cls, const char *name, const char *sig, void *fn)
 {
     void *id = method_id(cls, name, sig);
-    methods[(uintptr_t)id - 1].handler = fn;
+    __atomic_store_n(&methods[(uintptr_t)id - 1].handler,
+                     fn, __ATOMIC_RELEASE);
 }
 
 /* --------------------------------------------------------------- registry of
@@ -371,15 +426,22 @@ typedef struct { char cls[128]; char name[128]; char sig[192]; void *fn; } jnati
 #define MAX_NATIVES 512
 static jnative natives[MAX_NATIVES];
 static int natives_n;
+static pthread_mutex_t natives_lock = PTHREAD_MUTEX_INITIALIZER;
 static jobj *unity_player_object;
 
 void *gb_jni_native(const char *cls, const char *name)
 {
-    for (int i = 0; i < natives_n; i++)
+    void *result = NULL;
+    pthread_mutex_lock(&natives_lock);
+    for (int i = 0; i < natives_n; i++) {
         if (strcmp(natives[i].name, name) == 0 &&
-            (!cls || strcmp(natives[i].cls, cls) == 0))
-            return natives[i].fn;
-    return NULL;
+            (!cls || strcmp(natives[i].cls, cls) == 0)) {
+            result = natives[i].fn;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&natives_lock);
+    return result;
 }
 
 void gb_jni_set_unity_player(void *player)
@@ -401,9 +463,16 @@ void gb_jni_soft_input_text(const char *text)
                        "nativeSetInputString");
     if (!native)
         return;
+    void *env = gb_jni_env();
+    int scope = gb_jni_ref_scope_begin();
+    if (scope < 0) {
+        nx_log("jni: cannot open local frame for nativeSetInputString");
+        return;
+    }
     jobj *value = mk_string(text ? text : "");
     ((void (*)(void *, void *, void *))native)(
-        gb_jni_env(), soft_input_player(), value);
+        env, soft_input_player(), value);
+    gb_jni_ref_scope_end(scope);
 }
 
 void gb_jni_soft_input_selection(int start, int length)
@@ -411,9 +480,17 @@ void gb_jni_soft_input_selection(int start, int length)
     void *native =
         gb_jni_native("com/unity3d/player/UnityPlayer",
                        "nativeSetInputSelection");
-    if (native)
-        ((void (*)(void *, void *, int, int))native)(
-            gb_jni_env(), soft_input_player(), start, length);
+    if (!native)
+        return;
+    void *env = gb_jni_env();
+    int scope = gb_jni_ref_scope_begin();
+    if (scope < 0) {
+        nx_log("jni: cannot open local frame for nativeSetInputSelection");
+        return;
+    }
+    ((void (*)(void *, void *, int, int))native)(
+        env, soft_input_player(), start, length);
+    gb_jni_ref_scope_end(scope);
 }
 
 void gb_jni_soft_input_visible(int visible)
@@ -421,9 +498,17 @@ void gb_jni_soft_input_visible(int visible)
     void *native =
         gb_jni_native("com/unity3d/player/UnityPlayer",
                        "nativeSetKeyboardIsVisible");
-    if (native)
-        ((void (*)(void *, void *, int))native)(
-            gb_jni_env(), soft_input_player(), visible != 0);
+    if (!native)
+        return;
+    void *env = gb_jni_env();
+    int scope = gb_jni_ref_scope_begin();
+    if (scope < 0) {
+        nx_log("jni: cannot open local frame for nativeSetKeyboardIsVisible");
+        return;
+    }
+    ((void (*)(void *, void *, int))native)(
+        env, soft_input_player(), visible != 0);
+    gb_jni_ref_scope_end(scope);
 }
 
 void gb_jni_soft_input_closed(int canceled)
@@ -432,19 +517,140 @@ void gb_jni_soft_input_closed(int canceled)
         canceled ? "nativeSoftInputCanceled" : "nativeSoftInputClosed";
     void *native =
         gb_jni_native("com/unity3d/player/UnityPlayer", name);
-    if (native)
-        ((void (*)(void *, void *))native)(
-            gb_jni_env(), soft_input_player());
+    if (!native)
+        return;
+    void *env = gb_jni_env();
+    int scope = gb_jni_ref_scope_begin();
+    if (scope < 0) {
+        nx_log("jni: cannot open local frame for %s", name);
+        return;
+    }
+    ((void (*)(void *, void *))native)(env, soft_input_player());
+    gb_jni_ref_scope_end(scope);
 }
 
 /* ------------------------------------------------------------------ vtable */
 
 static void *vt[JNI_SLOT_COUNT];
-static void *env_ptr = vt;          /* JNIEnv* is a pointer to the vtable ptr */
 static void *jvm_vt[8];
 static void *jvm_ptr = jvm_vt;
+static int jni_vm_ready;
 
-void *gb_jni_env(void) { return &env_ptr; }
+typedef struct {
+    void *env_ptr;              /* JNIEnv* is a pointer to this vtable pointer */
+    jobj *pending_exception;    /* retained until clear/detach */
+    int attached;
+    int base_scope;
+} jni_thread_state;
+
+static pthread_key_t jni_thread_key;
+static pthread_once_t jni_thread_key_once = PTHREAD_ONCE_INIT;
+static int jni_thread_key_error;
+
+static void jni_thread_state_destroy(void *pointer);
+
+static void create_jni_thread_key(void)
+{
+    jni_thread_key_error =
+        pthread_key_create(&jni_thread_key, jni_thread_state_destroy);
+}
+
+static jni_thread_state *jni_thread_state_get(int create)
+{
+    pthread_once(&jni_thread_key_once, create_jni_thread_key);
+    if (jni_thread_key_error != 0)
+        return NULL;
+
+    jni_thread_state *state = pthread_getspecific(jni_thread_key);
+    if (state || !create)
+        return state;
+
+    state = calloc(1, sizeof *state);
+    if (!state)
+        return NULL;
+    state->env_ptr = vt;
+    if (pthread_setspecific(jni_thread_key, state) != 0) {
+        free(state);
+        return NULL;
+    }
+    return state;
+}
+
+static void jni_clear_pending_exception(jni_thread_state *state)
+{
+    if (!state)
+        return;
+    jobj *pending = state->pending_exception;
+    state->pending_exception = NULL;
+    gb_jni_ref_delete_global(pending);
+}
+
+static int jni_attach_current(void **out)
+{
+    jni_thread_state *state = jni_thread_state_get(1);
+    if (!state) {
+        if (out)
+            *out = NULL;
+        return -1;
+    }
+    if (!state->attached ||
+        gb_jni_ref_scope_depth() <= (unsigned)state->base_scope) {
+        int token = gb_jni_ref_scope_begin();
+        if (token < 0) {
+            if (out)
+                *out = NULL;
+            return -1;
+        }
+        state->base_scope = token;
+        state->attached = 1;
+    }
+    state->env_ptr = vt;
+    if (out)
+        *out = &state->env_ptr;
+    return 0;
+}
+
+static int jni_detach_current(void)
+{
+    jni_thread_state *state = jni_thread_state_get(0);
+    if (!state)
+        return -1;
+
+    jni_clear_pending_exception(state);
+    if (!state->attached)
+        return -1;
+    gb_jni_ref_scope_end(state->base_scope);
+    state->attached = 0;
+    state->base_scope = 0;
+    state->env_ptr = NULL;
+    return 0;
+}
+
+static void jni_thread_state_destroy(void *pointer)
+{
+    jni_thread_state *state = pointer;
+    if (!state)
+        return;
+
+    jni_clear_pending_exception(state);
+    if (state->attached)
+        gb_jni_ref_scope_end(state->base_scope);
+    /* Also unwind an adapter scope left behind by an early pthread return. */
+    gb_jni_ref_scope_end(0);
+    free(state);
+}
+
+void *gb_jni_env(void)
+{
+    jni_thread_state *state = jni_thread_state_get(1);
+    if (!state)
+        nx_die("cannot allocate fake JNI thread state");
+    if (__atomic_load_n(&jni_vm_ready, __ATOMIC_ACQUIRE) &&
+        jni_attach_current(NULL) != 0)
+        nx_die("cannot attach fake JNI thread state");
+    state->env_ptr = vt;
+    return &state->env_ptr;
+}
 void *gb_jni_vm(void) { return &jvm_ptr; }
 
 /* --------------------------------------------------- Java callback/Looper flow
@@ -470,6 +676,7 @@ enum {
 };
 
 static jobj *choreo_proxy;
+static pthread_mutex_t choreo_proxy_lock = PTHREAD_MUTEX_INITIALIZER;
 static jobj *looper_object;
 static jobj *choreographer_object;
 static jobj *message_object;
@@ -492,6 +699,27 @@ static int64_t monotonic_nanos(void)
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
     return (int64_t)now.tv_sec * 1000000000LL + now.tv_nsec;
+}
+
+static void set_choreo_proxy(jobj *proxy)
+{
+    pthread_mutex_lock(&choreo_proxy_lock);
+    jobj *old = __atomic_load_n(&choreo_proxy, __ATOMIC_ACQUIRE);
+    if (old != proxy) {
+        (void)gb_jni_ref_new_global(proxy);
+        __atomic_store_n(&choreo_proxy, proxy, __ATOMIC_RELEASE);
+        gb_jni_ref_delete_global(old);
+    }
+    pthread_mutex_unlock(&choreo_proxy_lock);
+}
+
+static jobj *acquire_choreo_proxy(void)
+{
+    pthread_mutex_lock(&choreo_proxy_lock);
+    jobj *proxy = __atomic_load_n(&choreo_proxy, __ATOMIC_ACQUIRE);
+    (void)gb_jni_ref_new_global(proxy);
+    pthread_mutex_unlock(&choreo_proxy_lock);
+    return proxy;
 }
 
 static unsigned proxy_interfaces(jobj *interfaces)
@@ -523,35 +751,47 @@ static void *invoke_proxy(jobj *proxy, jobj *iface, jobj *method, jobj *args)
     void *invoke = gb_jni_native("bitter/jnibridge/JNIBridge", "invoke");
     if (!invoke || !proxy->prim)
         return NULL;
-    return ((void *(*)(void *, void *, int64_t, void *, void *, void *))invoke)(
-        gb_jni_env(), iface, proxy->prim, iface, method, args);
+    void *env = gb_jni_env();
+    int scope = gb_jni_ref_scope_begin();
+    if (scope < 0)
+        return NULL;
+    (void)((void *(*)(void *, void *, int64_t, void *, void *, void *))invoke)(
+        env, iface, proxy->prim, iface, method, args);
+    gb_jni_ref_scope_end(scope);
+    return NULL;
 }
 
 static int deliver_handle_message(void)
 {
-    jobj *proxy = __atomic_load_n(&choreo_proxy, __ATOMIC_ACQUIRE);
+    jobj *proxy = acquire_choreo_proxy();
     if (!proxy)
         return 0;
     jobj *iface = mk_class("android/os/Handler$Callback");
     nx_log("jni: UnityChoreographer handleMessage(what=%d)", message_what);
     (void)invoke_proxy(proxy, iface, handlemsg_method, handlemsg_args);
+    gb_jni_ref_delete_global(proxy);
     return 1;
 }
 
 static int deliver_frame(int64_t nanos)
 {
-    jobj *proxy = __atomic_load_n(&choreo_proxy, __ATOMIC_ACQUIRE);
+    jobj *proxy = acquire_choreo_proxy();
     if (!proxy)
         return 0;
     __atomic_store_n(&frame_time_box->prim, nanos, __ATOMIC_RELEASE);
     jobj *iface = mk_class("android/view/Choreographer$FrameCallback");
     (void)invoke_proxy(proxy, iface, doframe_method, doframe_args);
+    gb_jni_ref_delete_global(proxy);
     return 1;
 }
 
 static void *choreographer_driver(void *arg)
 {
     (void)arg;
+    if (jni_attach_current(NULL) != 0) {
+        nx_log("jni: cannot attach UnityChoreographer HandlerThread");
+        return NULL;
+    }
     void *domain = NULL;
     void *thread = NULL;
     nx_mod *il2cpp = nx_find_mod("libil2cpp.so");
@@ -569,8 +809,10 @@ static void *choreographer_driver(void *arg)
 
     while (!__atomic_exchange_n(&message_pending, 0, __ATOMIC_ACQ_REL))
         usleep(1000);
-    if (!deliver_handle_message())
+    if (!deliver_handle_message()) {
+        (void)jni_detach_current();
         return NULL;
+    }
 
     const int64_t period = 16666667LL;
     int64_t next = monotonic_nanos() + period;
@@ -637,26 +879,85 @@ static uint8_t j_IsAssignableFrom(void *e, jobj *a, jobj *b)
 
 static jobj *j_GetSuperclass(void *e, jobj *c) { (void)e; (void)c; return mk_class("java/lang/Object"); }
 
-static void *j_NewGlobalRef(void *e, void *o) { (void)e; return o; }
-static void *j_NewLocalRef(void *e, void *o) { (void)e; return o; }
-static void *j_NewWeakGlobalRef(void *e, void *o) { (void)e; return o; }
-static void j_DeleteRef(void *e, void *o) { (void)e; (void)o; }
+static void *j_NewGlobalRef(void *e, void *o)
+{
+    (void)e;
+    return gb_jni_ref_new_global(o);
+}
+static void j_DeleteGlobalRef(void *e, void *o)
+{
+    (void)e;
+    gb_jni_ref_delete_global(o);
+}
+static void *j_NewLocalRef(void *e, void *o)
+{
+    (void)e;
+    return gb_jni_ref_new_local(o);
+}
+static void j_DeleteLocalRef(void *e, void *o)
+{
+    (void)e;
+    gb_jni_ref_delete_local(o);
+}
+static void *j_NewWeakGlobalRef(void *e, void *o)
+{
+    (void)e;
+    return gb_jni_ref_new_global(o);
+}
 static uint8_t j_IsSameObject(void *e, void *a, void *b) { (void)e; return a == b; }
-static int32_t j_PushLocalFrame(void *e, int32_t n) { (void)e; (void)n; return 0; }
-static void *j_PopLocalFrame(void *e, void *r) { (void)e; return r; }
+static int32_t j_PushLocalFrame(void *e, int32_t n)
+{
+    (void)e;
+    return gb_jni_ref_push_local_frame(n);
+}
+static void *j_PopLocalFrame(void *e, void *r)
+{
+    (void)e;
+    return gb_jni_ref_pop_local_frame(r);
+}
 static int32_t j_EnsureLocalCapacity(void *e, int32_t n) { (void)e; (void)n; return 0; }
 
-static jobj *pending_exception;
-static void *j_ExceptionOccurred(void *e) { (void)e; return pending_exception; }
+static void *j_ExceptionOccurred(void *e)
+{
+    (void)e;
+    jni_thread_state *state = jni_thread_state_get(0);
+    return gb_jni_ref_new_local(state ? state->pending_exception : NULL);
+}
 static void j_ExceptionDescribe(void *e) { (void)e; }
-static void j_ExceptionClear(void *e) { (void)e; pending_exception = NULL; }
-static uint8_t j_ExceptionCheck(void *e) { (void)e; return pending_exception != NULL; }
-static int32_t j_Throw(void *e, jobj *t) { (void)e; pending_exception = t; return 0; }
+static void j_ExceptionClear(void *e)
+{
+    (void)e;
+    jni_clear_pending_exception(jni_thread_state_get(0));
+}
+static uint8_t j_ExceptionCheck(void *e)
+{
+    (void)e;
+    jni_thread_state *state = jni_thread_state_get(0);
+    return state && state->pending_exception != NULL;
+}
+static int32_t j_Throw(void *e, jobj *t)
+{
+    (void)e;
+    jni_thread_state *state = jni_thread_state_get(1);
+    if (!state)
+        return -1;
+    jobj *old = state->pending_exception;
+    state->pending_exception = gb_jni_ref_new_global(t);
+    gb_jni_ref_delete_global(old);
+    return 0;
+}
 static int32_t j_ThrowNew(void *e, jobj *c, const char *m)
 {
     (void)e;
     nx_log("jni: ThrowNew %s: %s", c && c->cls ? c->cls : "?", m ? m : "");
-    pending_exception = new_obj(O_THROWABLE, c ? c->cls : "java/lang/Exception");
+    jni_thread_state *state = jni_thread_state_get(1);
+    if (!state)
+        return -1;
+    jobj *old = state->pending_exception;
+    state->pending_exception =
+        new_obj(O_THROWABLE, c ? c->cls : "java/lang/Exception");
+    (void)gb_jni_ref_new_global(state->pending_exception);
+    gb_jni_ref_delete_global(old);
     return 0;
 }
 static void j_FatalError(void *e, const char *m) { (void)e; nx_die("JNI FatalError: %s", m); }
@@ -778,20 +1079,29 @@ static jobj *j_NewObjectArray(void *e, int32_t n, jobj *cls, jobj *init)
     jobj *o = new_obj(O_OBJARRAY, "[Ljava/lang/Object;");
     o->len = n;
     o->elems = calloc((size_t)(n > 0 ? n : 1), sizeof *o->elems);
-    for (int32_t i = 0; i < n; i++)
+    if (!o->elems)
+        nx_die("cannot allocate fake JNI object array");
+    for (int32_t i = 0; i < n; i++) {
         o->elems[i] = init;
+        gb_jni_ref_retain(init);
+    }
     return o;
 }
 static jobj *j_GetObjectArrayElement(void *e, jobj *a, int32_t i)
 {
     (void)e;
-    return (a && a->elems && i >= 0 && i < a->len) ? a->elems[i] : NULL;
+    jobj *value = (a && a->elems && i >= 0 && i < a->len)
+                    ? a->elems[i] : NULL;
+    return gb_jni_ref_new_local(value);
 }
 static void j_SetObjectArrayElement(void *e, jobj *a, int32_t i, jobj *v)
 {
     (void)e;
-    if (a && a->elems && i >= 0 && i < a->len)
+    if (a && a->elems && i >= 0 && i < a->len) {
+        gb_jni_ref_retain(v);
+        gb_jni_ref_release(a->elems[i]);
         a->elems[i] = v;
+    }
 }
 static void *j_GetPrimitiveArrayCritical(void *e, jobj *a, uint8_t *copy)
 {
@@ -932,7 +1242,8 @@ static int64_t j_List_get(jctx *c)
     int index = jarg_int(c);
     if (!c->self || !c->self->elems || index < 0 || index >= c->self->len)
         return 0;
-    return (int64_t)(uintptr_t)c->self->elems[index];
+    return (int64_t)(uintptr_t)
+        gb_jni_ref_new_local(c->self->elems[index]);
 }
 
 static int64_t j_List_iterator(jctx *c)
@@ -940,7 +1251,8 @@ static int64_t j_List_iterator(jctx *c)
     motion_range_iterator->elems = c->self ? c->self->elems : NULL;
     motion_range_iterator->len = c->self ? c->self->len : 0;
     motion_range_iterator->prim = 0;
-    return (int64_t)(uintptr_t)motion_range_iterator;
+    return (int64_t)(uintptr_t)
+        gb_jni_ref_new_local(motion_range_iterator);
 }
 
 static int64_t j_Iterator_hasNext(jctx *c)
@@ -953,7 +1265,8 @@ static int64_t j_Iterator_next(jctx *c)
     if (!c->self || !c->self->elems ||
         c->self->prim < 0 || c->self->prim >= c->self->len)
         return 0;
-    return (int64_t)(uintptr_t)c->self->elems[c->self->prim++];
+    jobj *value = c->self->elems[c->self->prim++];
+    return (int64_t)(uintptr_t)gb_jni_ref_new_local(value);
 }
 
 static int64_t j_MotionRange_getInt(jctx *c)
@@ -1110,7 +1423,8 @@ static int64_t j_MotionEvent_obtain(jctx *c)
     jobj *source = jarg_obj(c);
     unsigned slot = motion_clone_next++ % MOTION_CLONE_COUNT;
     if (!motion_clones[slot])
-        motion_clones[slot] = mk_object("android/view/MotionEvent");
+        motion_clones[slot] = alloc_obj(O_OBJECT,
+                                        "android/view/MotionEvent", 1);
     motion_clone_data[slot] = *motion_from_object(source);
     motion_clones[slot]->data = &motion_clone_data[slot];
     if (motion_clone_data[slot].source == 0x00001002)
@@ -1820,7 +2134,8 @@ static int64_t j_Prefs_getString(jctx *c)
     preferences_load_locked();
     pref_entry *entry = pref_find_locked(k);
     jobj *value = entry && entry->type == PREF_STRING
-        ? mk_string(entry->string ? entry->string : "") : dflt;
+        ? mk_string(entry->string ? entry->string : "")
+        : gb_jni_ref_new_local(dflt);
     pthread_mutex_unlock(&preferences_lock);
     return (int64_t)(uintptr_t)value;
 }
@@ -2053,7 +2368,7 @@ static int64_t j_newInterfaceProxy(jctx *c)
        (unsigned long long)handle, proxy->len, (void *)proxy);
     if ((proxy->len & (PROXY_HANDLER_CALLBACK | PROXY_FRAME_CALLBACK)) ==
         (PROXY_HANDLER_CALLBACK | PROXY_FRAME_CALLBACK)) {
-        __atomic_store_n(&choreo_proxy, proxy, __ATOMIC_RELEASE);
+        set_choreo_proxy(proxy);
         nx_log("jni: UnityChoreographer proxy captured handle=%#llx",
                (unsigned long long)handle);
     }
@@ -2087,8 +2402,7 @@ static int64_t j_Thread_start(jctx *c)
 
 static int64_t j_FMOD_start(jctx *c)
 {
-    if (c->self)
-        fmod_device_object = c->self;
+    (void)c;
     __atomic_store_n(&fmod_should_run, 1, __ATOMIC_RELEASE);
     nx_log("audio: FMODAudioDevice.start -> native AudioTrack requested");
     return 0;
@@ -2158,7 +2472,7 @@ static int64_t j_Choreographer_postFrameCallback(jctx *c)
      * it once per tick. */
     jobj *callback = jarg_obj(c);
     if (callback && (callback->len & PROXY_FRAME_CALLBACK))
-        __atomic_store_n(&choreo_proxy, callback, __ATOMIC_RELEASE);
+        set_choreo_proxy(callback);
     return 0;
 }
 
@@ -2233,7 +2547,8 @@ static int64_t dispatch(void *e, jobj *self, void *mid, va_list *ap,
         JT("unboxed %s.%s -> %lld", self->cls, m->name, (long long)self->prim);
         return self->prim;
     }
-    if (m->handler) {
+    void *handler = __atomic_load_n(&m->handler, __ATOMIC_ACQUIRE);
+    if (handler) {
         jctx c = {
             .env = e,
             .self = self,
@@ -2242,7 +2557,7 @@ static int64_t dispatch(void *e, jobj *self, void *mid, va_list *ap,
             .arg_index = 0,
             .m = m,
         };
-        return ((gb_jni_handler)m->handler)(&c);
+        return ((gb_jni_handler)handler)(&c);
     }
     /* Java inheritance is implicit on Android, while this deliberately small
      * registry keys reflected methods by the concrete runtime class.  Unity's
@@ -2275,7 +2590,7 @@ static int64_t dispatch(void *e, jobj *self, void *mid, va_list *ap,
         if (ret && ret[1] == 'L' && strncmp(ret + 2, self->cls, n) == 0 &&
             ret[2 + n] == ';') {
             JT("builder %s.%s -> self", self->cls, m->name);
-            return (int64_t)(uintptr_t)self;
+            return (int64_t)(uintptr_t)gb_jni_ref_new_local(self);
         }
     }
     /* Field reads (signature has no ')') and object-returning methods we do
@@ -2646,16 +2961,21 @@ static int32_t j_RegisterNatives(void *e, jobj *c, const void *m, int32_t n)
 {
     (void)e;
     const struct { const char *name; const char *sig; void *fn; } *r = m;
+    pthread_mutex_lock(&natives_lock);
     for (int32_t i = 0; i < n; i++) {
-        if (natives_n == MAX_NATIVES)
+        if (natives_n == MAX_NATIVES) {
+            pthread_mutex_unlock(&natives_lock);
             nx_die("native table full");
-        jnative *k = &natives[natives_n++];
+        }
+        jnative *k = &natives[natives_n];
         snprintf(k->cls, sizeof k->cls, "%s", c && c->cls ? c->cls : "?");
         snprintf(k->name, sizeof k->name, "%s", r[i].name);
         snprintf(k->sig, sizeof k->sig, "%s", r[i].sig);
         k->fn = r[i].fn;
         nx_log("RegisterNatives %s.%s%s -> %p", k->cls, k->name, k->sig, k->fn);
+        natives_n++;
     }
+    pthread_mutex_unlock(&natives_lock);
     return 0;
 }
 static int32_t j_UnregisterNatives(void *e, jobj *c) { (void)e; (void)c; return 0; }
@@ -2684,19 +3004,41 @@ static jobj *j_DefineClass(void *e, const char *n, void *l, const void *b, int32
 
 /* --- JavaVM ----------------------------------------------------------- */
 
+static int jni_version_supported(int32_t version)
+{
+    return version == 0x00010001 || version == 0x00010002 ||
+           version == 0x00010004 || version == 0x00010006;
+}
+
 static int32_t vm_GetEnv(void *vm, void **out, int32_t ver)
 {
-    (void)vm; (void)ver;
-    *out = gb_jni_env();
+    (void)vm;
+    if (!out)
+        return -1; /* JNI_ERR */
+    *out = NULL;
+    if (!jni_version_supported(ver))
+        return -3; /* JNI_EVERSION */
+    jni_thread_state *state = jni_thread_state_get(0);
+    if (!state || !state->attached)
+        return -2; /* JNI_EDETACHED */
+    if (jni_attach_current(NULL) != 0)
+        return -1;
+    state->env_ptr = vt;
+    *out = &state->env_ptr;
     return 0;
 }
 static int32_t vm_AttachCurrentThread(void *vm, void **out, void *args)
 {
     (void)vm; (void)args;
-    *out = gb_jni_env();
-    return 0;
+    if (!out)
+        return -1;
+    return jni_attach_current(out);
 }
-static int32_t vm_DetachCurrentThread(void *vm) { (void)vm; return 0; }
+static int32_t vm_DetachCurrentThread(void *vm)
+{
+    (void)vm;
+    return jni_detach_current();
+}
 static int32_t vm_DestroyJavaVM(void *vm) { (void)vm; return 0; }
 
 /* ------------------------------------------------------------------- build */
@@ -2724,8 +3066,8 @@ void gb_jni_init(void)
     vt[JNI_PushLocalFrame] = j_PushLocalFrame;
     vt[JNI_PopLocalFrame] = j_PopLocalFrame;
     vt[JNI_NewGlobalRef] = j_NewGlobalRef;
-    vt[JNI_DeleteGlobalRef] = j_DeleteRef;
-    vt[JNI_DeleteLocalRef] = j_DeleteRef;
+    vt[JNI_DeleteGlobalRef] = j_DeleteGlobalRef;
+    vt[JNI_DeleteLocalRef] = j_DeleteLocalRef;
     vt[JNI_IsSameObject] = j_IsSameObject;
     vt[JNI_NewLocalRef] = j_NewLocalRef;
     vt[JNI_EnsureLocalCapacity] = j_EnsureLocalCapacity;
@@ -2803,7 +3145,7 @@ void gb_jni_init(void)
     vt[JNI_MonitorExit] = j_MonitorExit;
     vt[JNI_GetJavaVM] = j_GetJavaVM;
     vt[JNI_NewWeakGlobalRef] = j_NewWeakGlobalRef;
-    vt[JNI_DeleteWeakGlobalRef] = j_DeleteRef;
+    vt[JNI_DeleteWeakGlobalRef] = j_DeleteGlobalRef;
     vt[JNI_ExceptionCheck] = j_ExceptionCheck;
     vt[JNI_NewDirectByteBuffer] = j_NewDirectByteBuffer;
     vt[JNI_GetDirectBufferAddress] = j_GetDirectBufferAddress;
@@ -3297,7 +3639,11 @@ void gb_jni_init(void)
     if (JNI_NewStringUTF * 8 != 1336)
         nx_die("JNIEnv layout drift: NewStringUTF is at %d, not 1336",
                JNI_NewStringUTF * 8);
-    nx_log("jni: env=%p vtable slots=%d", gb_jni_env(), JNI_SLOT_COUNT);
+    void *main_env = NULL;
+    if (jni_attach_current(&main_env) != 0)
+        nx_die("cannot attach fake JNI main thread");
+    __atomic_store_n(&jni_vm_ready, 1, __ATOMIC_RELEASE);
+    nx_log("jni: env=%p vtable slots=%d", main_env, JNI_SLOT_COUNT);
 }
 
 void *gb_jni_sym(const char *name)

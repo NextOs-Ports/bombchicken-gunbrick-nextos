@@ -13,13 +13,13 @@ asset is redistributed.
 
 The original 1.0 port was physically proven playable on a NextOS AArch64
 Mali-450/GLES2 handheld: image, audio, controller, pause/resume, level
-progression and orderly exit all worked. Version 1.1.1 migrates its public
-launcher, contract, data extraction and low-glibc build to the universal
-framework while deliberately preserving the proven Unity adapter and native
-lifecycle.
+progression and orderly exit all worked. Version 1.1.4 regenerates only the
+public launcher and release metadata from canonical nxbootstrap 0.6.3 while
+preserving the proven Unity adapter and native lifecycle.
 
-The 1.1.1 loader builds reproducibly with a maximum requirement of
-`GLIBC_2.27`, below the public `GLIBC_2.30` ceiling. Its host-only contract and
+The loader bundled in 1.1.4 is byte-identical to the approved 1.1.3 loader and
+has a maximum requirement of `GLIBC_2.27`, below the public `GLIBC_2.30`
+ceiling. Its host-only contract and
 package gates pass without starting SDL, EGL, GLES, a game process or a test
 device. The new package still needs physical validation of the exact release
 ZIP before it can be promoted as multi-firmware. A successful host gate is not
@@ -27,27 +27,13 @@ a claim that every AArch64 firmware or GPU is supported.
 
 ### Architecture
 
-The generated framework 0.5.1 launcher is the package's only launcher. It
-validates the static deployment receipt, resolves capabilities supplied by the
-host and exports only the quirks declared in `nxport.json`. It then starts
-`bombchicken-nextos` directly; the package contains no nested `run.sh`,
-firmware-name branch or process-table scan.
-
-When that new launcher reaches its declared prepare phase, version 1.1.1 checks
-the four known 1.0 overlay residues by exact SHA-256 and moves matching bytes out
-of the active port directory into a non-executable
-`.nxlegacy-bombchicken-v1/` quarantine. On FAT/exFAT storage that cannot retain
-the non-executable mode, that byte-exact quarantined residue is removed instead.
-Unknown bytes, symlinks and other file types are preserved and stop the launch
-for manual review. The migration names only `run.sh`, `es_map.sh`, `es2sdl.awk`
-and the old `bombchicken` loader; it never scans processes or another ROM root
-and never touches `assets/`, `lib/`, `home/`, `gamedata/` or saves.
-
-This makes a clean install and a PortMaster update on the same active scripts
-root safe. It cannot remove an old visible launcher left on an inactive card or
-the other muOS root. If you changed the PortMaster storage root between versions,
-uninstall/remove that old menu entry explicitly or perform a clean installation
-before using the new entry.
+The self-contained nxbootstrap 0.6.3 launcher is the package's only launcher.
+It resolves host capabilities, exports only the quirks declared in
+`nxport.json`, runs NXExtract as a separate foreground phase, and then starts
+`bombchicken-nextos` directly. Its single-instance lock uses Bash `-ef` and
+portable numeric `ls`, with no external `stat` dependency. The package contains
+no bootstrap companion, deployment receipt, nested `run.sh`, firmware-name
+branch or process-table scan.
 
 The compiled adapter remains game-specific. It maps the owner's original
 AArch64 `libmain.so`, `libunity.so` and `libil2cpp.so`, supplies the Android/JNI,
@@ -169,12 +155,12 @@ with or endorsed by Nitrome, Unity or Google.
 
 O port 1.0 original foi comprovado fisicamente como jogável em um portátil
 NextOS AArch64 com Mali-450/GLES2: imagem, áudio, controle, pausa/retomada,
-progresso de fase e saída ordenada funcionaram. A versão 1.1.1 migra launcher
-público, contrato, extração de dados e build de glibc baixa para o framework
-universal, preservando de propósito o adaptador Unity e o ciclo de vida já
-comprovados.
+progresso de fase e saída ordenada funcionaram. A versão 1.1.4 regenera apenas
+o launcher público e os metadados da release com o nxbootstrap 0.6.3 canônico,
+preservando o adaptador Unity e o ciclo de vida já comprovados.
 
-O loader 1.1.1 compila de forma reproduzível exigindo no máximo `GLIBC_2.27`,
+O loader incluído na 1.1.4 é byte a byte idêntico ao loader aprovado da 1.1.3
+e exige no máximo `GLIBC_2.27`,
 abaixo do teto público `GLIBC_2.30`. Os gates de contrato e pacote rodam apenas
 no host, sem iniciar SDL, EGL, GLES, jogo ou aparelho. O ZIP exato da nova
 versão ainda precisa de validação física antes de receber promoção
@@ -183,28 +169,13 @@ GPU já tenha suporte comprovado.
 
 ### Arquitetura
 
-O launcher gerado pelo framework 0.5.1 é o único launcher do pacote. Ele valida
-o receipt estático de instalação, resolve as capacidades entregues pelo host e
-exporta somente os quirks declarados em `nxport.json`. Depois chama diretamente
-`bombchicken-nextos`; o pacote não contém `run.sh` interno, desvio por nome de
-firmware nem varredura da tabela global de processos.
-
-Quando esse launcher novo alcança a fase `prepare` declarada, a versão 1.1.1
-confere os quatro resíduos conhecidos da instalação 1.0 pelo SHA-256 exato e
-move somente os bytes reconhecidos para a quarentena não executável
-`.nxlegacy-bombchicken-v1/`, fora do diretório ativo. Em FAT/exFAT que não
-preserva o modo não executável, esse resíduo de bytes exatos é removido da
-quarentena. Bytes desconhecidos, symlinks e outros tipos são preservados e
-bloqueiam a abertura para revisão manual. A migração nomeia apenas `run.sh`,
-`es_map.sh`, `es2sdl.awk` e o loader antigo `bombchicken`; nunca varre
-processos/outra raiz de ROM e nunca toca `assets/`, `lib/`, `home`, `gamedata/`
-ou saves.
-
-Isso cobre instalação limpa e update do PortMaster na mesma raiz ativa de
-scripts. Não é possível remover pelo launcher uma cópia antiga visível deixada
-em cartão ou raiz muOS inativa. Se a raiz de armazenamento do PortMaster mudou
-entre versões, desinstale/remova explicitamente a entrada antiga ou faça uma
-instalação limpa antes de usar a entrada nova.
+O nxbootstrap 0.6.3 autocontido é o único launcher do pacote. Ele resolve as
+capacidades do host, exporta somente os quirks declarados em `nxport.json`, roda
+o NXExtract numa fase separada em foreground e depois chama diretamente
+`bombchicken-nextos`. O lock de instância usa `-ef` do Bash e `ls` numérico
+portável, sem depender de `stat` externo. O pacote não contém bootstrap auxiliar,
+receipt de deployment, `run.sh` interno, desvio por firmware nem varredura da
+tabela global de processos.
 
 O adaptador compilado continua específico do jogo. Ele mapeia `libmain.so`,
 `libunity.so` e `libil2cpp.so` AArch64 originais do dono, oferece a superfície
@@ -218,7 +189,7 @@ Android/JNI, EGL/GLES, áudio e input realmente usada e reproduz a ordem nativa:
 5. executar o loop real de `nativeRender`;
 6. na saída, enviar perda de foco e pause antes de fechar input e áudio.
 
-Nenhum entry point, construtor ou estágio nativo é pulado. A migração não finge
+Nenhum entry point, construtor ou estágio nativo é pulado. Esta manutenção não finge
 que o adaptador comprovado já foi substituído por todos os módulos
 compartilhados: o framework universal controla o contrato e o pré-runtime; o
 código de compatibilidade Unity permanece em `src/`.

@@ -12,7 +12,7 @@ PORT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd -P)
 REPO_ROOT=$(CDPATH= cd -- "$PORT_DIR/../.." && pwd -P)
 NXRELEASE="$REPO_ROOT/framework/nxrelease/nxrelease.py"
 NXRELEASE_VERSION=0.2.5
-NXRELEASE_SHA256=dd307d3e18cd926be2cc51c2a7e9948193b3c309abcc414dfa8d784332df57ee
+NXRELEASE_SHA256=097ef954261d7e31fb4a759caf2ebda9be02f069b1968e3f7b379d92f51e732f
 MANIFEST="$PORT_DIR/nxrelease.json"
 DESTINATION=${1:-"$PORT_DIR/.build/release"}
 ARCHIVE_NAME=gunbrick.zip
@@ -64,5 +64,5 @@ python3 -B "$NXRELEASE" verify \
 
 printf 'GUNBRICK BYO RELEASE PACKAGE: %s\n' "$DESTINATION/$ARCHIVE_NAME"
 printf '%s\n' \
-  'physical_device_evidence=1 proprietary_payload=0 guest_execution=0'
+  'physical_device_evidence=1 baseline_physical_release=0.2.5 proprietary_payload=0 guest_execution=0'
 sha256sum -- "$DESTINATION/$ARCHIVE_NAME"

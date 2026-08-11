@@ -4,7 +4,7 @@
   "port_id": "gunbrick",
   "engine": "Unity 2022.3 IL2CPP",
   "architecture": "aarch64",
-  "status": "release-validated",
+  "status": "physically-validated-release",
   "release_ready": true,
   "lifecycle": {
     "policy": "preserve_native_android_order",
@@ -30,7 +30,14 @@
   "input": {
     "implementation": "nxinput",
     "mapping": "PortMaster control mapping through the native Android controller API",
-    "optional_quirk": "game.gunbrick.swipe-input"
+    "optional_quirk": "game.gunbrick.swipe-input",
+    "optional_quirk_enabled": false,
+    "left_stick": {
+      "policy": "native-raw-two-axis",
+      "host_cardinal_filter": false,
+      "bonus_3d_quadrants_preserved": true,
+      "native_rewired_path_preserved": true
+    }
   },
   "graphics": {
     "selection": "capability-first",
@@ -41,9 +48,30 @@
     "global_texture_wrap_override": false
   },
   "physical_device_evidence": true,
-  "release_ready_evidence": [
+  "physical_baseline_release": "0.2.5",
+  "memory_ownership": {
+    "jni_reference_policy": "scoped-refcounted-local-frames",
+    "jni_local_scope_regression": 100000,
+    "jni_live_after_regression": 0,
+    "guest_semaphore_registry": "dynamic-stable-address-map",
+    "guest_sem_destroy_policy": "non-destructive-for-engine-pointer-safety",
+    "host_semaphore_regression": 4096,
+    "repeated_post_wait_regression": 100000,
+    "android_low_memory_callback": {
+      "thread": "UnityMain-before-nativeRender",
+      "poll_frames": 120,
+      "mem_available_kib": 131072,
+      "swap_free_kib": 65536,
+      "cooldown_frames": 900
+    },
+    "guest_text_residency": "file-backed-clean-rx"
+  },
+  "physical_baseline_evidence": [
     "nxextract-ui-visible-on-three-targets",
-    "video-audio-controller-gameplay-on-three-targets"
+    "video-audio-controller-gameplay-on-three-targets",
+    "ark-mali-g31-bonus-phase-3-transition-without-oom-on-0.2.5",
+    "ark-mali-g31-raw-two-axis-left-stick-and-dpad-on-0.2.5",
+    "ark-mali-g31-video-audio-controls-and-continued-gameplay-on-0.2.5"
   ],
   "prohibitions": [
     "no-RVA-patches",

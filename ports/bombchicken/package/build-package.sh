@@ -12,9 +12,9 @@ PORT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd -P)
 REPO_ROOT=$(CDPATH= cd -- "$PORT_DIR/../.." && pwd -P)
 NXRELEASE="$REPO_ROOT/framework/nxrelease/nxrelease.py"
 NXRELEASE_VERSION=0.2.5
-NXRELEASE_SHA256=dd307d3e18cd926be2cc51c2a7e9948193b3c309abcc414dfa8d784332df57ee
+NXRELEASE_SHA256=097ef954261d7e31fb4a759caf2ebda9be02f069b1968e3f7b379d92f51e732f
 MANIFEST="$PORT_DIR/nxrelease.json"
-DESTINATION=${1:-"$PORT_DIR/.release/bombchicken-1.1.2"}
+DESTINATION=${1:-"$PORT_DIR/.release/bombchicken-1.1.4"}
 ARCHIVE_NAME=bombchicken.zip
 
 fail() {
@@ -61,5 +61,5 @@ python3 -B "$NXRELEASE" verify \
 
 printf 'BOMBCHICKEN PUBLIC PACKAGE PASS: %s\n' "$DESTINATION/$ARCHIVE_NAME"
 printf '%s\n' \
-  'physical_device_evidence=1' \
+  'physical_device_evidence=0' \
   'owner_data_in_package=0 device_calls=0 network_calls=0 guest_execution=0'

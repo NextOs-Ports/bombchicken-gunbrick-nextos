@@ -3,7 +3,7 @@
   "source_root": ".",
   "package": {
     "id": "bombchicken",
-    "version": "1.1.2",
+    "version": "1.1.4",
     "profile": "universal-portmaster",
     "launcher": "Bomb Chicken.sh",
     "launcher_chain": [
@@ -11,7 +11,7 @@
     ],
     "launcher_contract": {
       "generator": "nxbootstrap",
-      "version": "0.6.0",
+      "version": "0.6.3",
       "config_path": "bombchicken/nxport.json",
       "config_sha256": "663950c88560f6dd14160aa112bb15f622463427e4b1816f410096356f2cefeb"
     },
@@ -89,7 +89,7 @@
       "target": "Bomb Chicken.sh",
       "kind": "launcher",
       "mode": "0755",
-      "sha256": "67ab480a359b7fe7c44fd64e581a82a1a86106a0fab950038f095f341c5bfd45"
+      "sha256": "baae233ce1e94295291f047bac94d9d128ba82de11ec9e545edf0fbd699e22a0"
     },
     {
       "source": "nxport.json",
@@ -123,14 +123,14 @@
       "target": "bombchicken/README.md",
       "kind": "payload",
       "mode": "0644",
-      "sha256": "5b61b48f29c8a05abacf51c07cca8451ea686a71e42e36a04c550e63158a572f"
+      "sha256": "a2d26f25359ce5551b48a0de9b29e9177295bf7d6138238690ff5319e7968c41"
     },
     {
       "source": "INSTALLATION.md",
       "target": "bombchicken/INSTALLATION.md",
       "kind": "payload",
       "mode": "0644",
-      "sha256": "611ace97fb270866aa2b40f5ee8bfc5d62ccb9a1149903925fb6671d5985ba32"
+      "sha256": "9c4bfb6162a56e9f1219c6368dcde07c52a856efaeb63f43b460a11881df14f0"
     },
     {
       "source": "NOTICE.md",
@@ -151,7 +151,7 @@
       "target": "bombchicken/version.txt",
       "kind": "payload",
       "mode": "0644",
-      "sha256": "77123b8e4bdbd54505bf6e8021527ac60281602a06fe307564532c4dba39dbca"
+      "sha256": "2bde3ae39f59ee21201f87089cf7d215cf58ea437711e3d8e3e65fbc3078c798"
     },
     {
       "source": "gamedata/README.txt",

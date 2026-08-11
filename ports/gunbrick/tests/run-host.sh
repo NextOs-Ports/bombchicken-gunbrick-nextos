@@ -10,6 +10,23 @@ PORT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 REPO_ROOT=$(git -C "$PORT_DIR" rev-parse --show-toplevel)
 cd "$PORT_DIR"
 
+HOST_TEST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/gunbrick-host.XXXXXX")
+cleanup_host_test() {
+  find "$HOST_TEST_DIR" -type f -delete 2>/dev/null || true
+  rmdir "$HOST_TEST_DIR" 2>/dev/null || true
+}
+trap cleanup_host_test EXIT INT TERM
+
+${CC:-cc} -std=gnu11 -O2 -Wall -Wextra -Werror -pthread \
+  -Isrc -I../../framework/nxloader/include tests/test_pthread_bridge.c \
+  -o "$HOST_TEST_DIR/test-pthread-bridge"
+"$HOST_TEST_DIR/test-pthread-bridge"
+
+${CC:-cc} -std=gnu11 -O2 -Wall -Wextra -Werror -pthread \
+  -Isrc tests/test_jni_refs.c src/jni_refs.c \
+  -o "$HOST_TEST_DIR/test-jni-refs"
+"$HOST_TEST_DIR/test-jni-refs"
+
 for script in build.sh build_universal.sh "Gunbrick.sh" \
               nxextract/run-extractor.sh nxextract/nxextract-runtime-env.sh \
               package/build-package.sh; do
@@ -33,4 +50,4 @@ fi
 git -C "$REPO_ROOT" diff --check -- ports/gunbrick
 printf '%s\n' \
   'GUNBRICK HOST GATE: PASS' \
-  'physical_device_evidence=1 proprietary_payload_packaged=0 guest_execution=0'
+  'physical_device_evidence=0 baseline_physical_release=0.2.1 proprietary_payload_packaged=0 guest_execution=0'

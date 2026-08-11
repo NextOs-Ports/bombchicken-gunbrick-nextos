@@ -3,7 +3,7 @@
   "source_root": ".",
   "package": {
     "id": "gunbrick",
-    "version": "0.2.0",
+    "version": "0.2.5",
     "profile": "universal-portmaster",
     "launcher": "Gunbrick.sh",
     "launcher_chain": [
@@ -11,7 +11,7 @@
     ],
     "launcher_contract": {
       "generator": "nxbootstrap",
-      "version": "0.6.0",
+      "version": "0.6.3",
       "config_path": "gunbrick/nxport.json",
       "config_sha256": "319d6a38453fff7d7417fe773d82b6c1b7120b79b8f93cb1e9b5b69bcab757df"
     },
@@ -23,7 +23,7 @@
     }
   },
   "release": {
-    "source_date_epoch": 1786233600,
+    "source_date_epoch": 1786320000,
     "max_glibc": "2.30",
     "compression": "deflated"
   },
@@ -102,7 +102,7 @@
       "target": "Gunbrick.sh",
       "kind": "launcher",
       "mode": "0755",
-      "sha256": "aadb915c8c42d362630c922ca3440e0b1a1159ca101d97b6643d0dfd2de4dc68"
+      "sha256": "cb494d2d1c85fb5983d1eeac8ad5681be8d8f7401bfa3c1ac5ad4780df4d3e9b"
     },
     {
       "source": "nxport.json",
@@ -119,7 +119,7 @@
       "architecture": "aarch64",
       "build_profile": "universal-low-glibc",
       "provenance": "build_universal.sh; pinned offline Debian Buster image sha256:036c7910ea53bc78cc213452afa92fa83d55de1c51ae54f315af58b5a41a45cf; target sysroot used for headers only",
-      "sha256": "ae41c4dda164b1372cdc812ef0002d5d4f26840bc0e05fde3b5358bd0d58e63c",
+      "sha256": "01bcc932a82fecc26d43eb8881d4de11a21b5f9b2cf11fa7a97538d9983a21be",
       "needed": [
         "ld-linux-aarch64.so.1",
         "libSDL2-2.0.so.0",
@@ -137,7 +137,7 @@
       "target": "gunbrick/README.md",
       "kind": "payload",
       "mode": "0644",
-      "sha256": "8fb198bce9ae0c61e95566f6b5c757ebbff53427f10c063bcd1abefa880beb0f"
+      "sha256": "f8322c904bc5ca583f72c1f687e31faf4faa7a9baf7e43a2224a5173b4a4468f"
     },
     {
       "source": "INSTALLATION.md",
@@ -165,7 +165,7 @@
       "target": "gunbrick/version.txt",
       "kind": "payload",
       "mode": "0644",
-      "sha256": "1f930dd1f133c1f97a94fe3acb8db34372cf4c01ffdb2b3ff4ca72f9494121e9"
+      "sha256": "e959f750e92dbb7614ae28ac96f0a37272caed81d8bbb758791af7bfbb6106a0"
     },
     {
       "source": "gamedata-template/README.txt",
@@ -243,14 +243,14 @@
       "target": "gunbrick/references/adapter-contract-v1.json",
       "kind": "payload",
       "mode": "0644",
-      "sha256": "c74c3eedf3a335e73bcf025469e098c46b860ba6e44855593c996686fc652b39"
+      "sha256": "3a439955479e13769b200a3f790d6a4ab9a6ba4cad6323dbc1244e38c9e33f06"
     },
     {
       "source": "references/migration-status-v1.json",
       "target": "gunbrick/references/migration-status-v1.json",
       "kind": "payload",
       "mode": "0644",
-      "sha256": "9a566977639f21836c1edc1dd345c900f6b35f548c365993472fbf8df01c2714"
+      "sha256": "9a035c857ff7f8b0c3d52756ad55b8a50228bbb22b671a6853becef460a41fbb"
     }
   ],
   "exceptions": []

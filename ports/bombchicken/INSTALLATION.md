@@ -12,11 +12,7 @@ Android v44/build 45 release for `arm64-v8a`.
    <ROMS>/ports/Bomb Chicken.sh
    <ROMS>/ports/bombchicken/
    ├── bombchicken-nextos
-   ├── nxbootstrap-0.5.1.sh
-   ├── nxbootstrap.sh
-   ├── nxdeployment.json
    ├── nxport.json
-   ├── migrate-legacy-overlay.sh
    ├── extractor.json
    ├── nxextract/
    └── gamedata/README.txt
@@ -25,19 +21,12 @@ Android v44/build 45 release for `arm64-v8a`.
    `<ROMS>` is the root chosen by your firmware; no particular absolute path
    is required. A PortMaster frontend may place the visible `Bomb Chicken.sh`
    in its normal scripts directory while keeping `bombchicken/` in the ports
-   data directory. Keep both bootstrap files: the launcher selects the
-   versioned 0.5.1 implementation, while `nxbootstrap.sh` is the byte-identical
-   compatibility copy.
+   data directory. `Bomb Chicken.sh` contains the complete nxbootstrap 0.6.3
+   logic; there is no companion bootstrap or nested launcher.
 
-   For an upgrade from 1.0, use PortMaster on the same active scripts/storage
-   root. The first launch through the new entry quarantines only the four exact,
-   hash-allowlisted legacy files and preserves all owner data and saves. A
-   modified legacy file or symlink is left untouched and blocks launch for
-   manual review. Exact residues are removed only when FAT/exFAT cannot retain a
-   non-executable quarantine mode. The package does not scan or alter an
-   inactive card/root; if you moved between the mmc and sdcard roots on muOS,
-   explicitly uninstall or remove the old menu entry there, or perform a clean
-   installation.
+   To update, extract the complete v1.1.4 ZIP over the same active ports root.
+   Existing extracted owner data and saves are preserved. If you moved between
+   storage roots, remove the old menu entry from the inactive root explicitly.
 
 2. Put the **APK you legally own** in
    `<ROMS>/ports/bombchicken/gamedata/`. The file name does not matter.
@@ -50,9 +39,8 @@ Android v44/build 45 release for `arm64-v8a`.
 4. Your APK is never deleted. After a successful install you may remove it
    from the card to save space, but retain your lawful copy for reinstalls.
 
-Do not create `run.sh`, unpack the APK by hand, copy Android libraries into the
-public ZIP or edit `nxdeployment.json`. The latter is a static package receipt,
-not mutable runtime state.
+Do not create `run.sh`, unpack the APK by hand or copy Android libraries into
+the public ZIP.
 
 ### Controls
 
@@ -62,21 +50,15 @@ clicks. Select + Start exits through focus-lost and native pause.
 
 ### Diagnosing a launch
 
-There are four observable boundaries:
+The current attempt is recorded in `bombchicken/log.txt`; the previous attempt
+is rotated to `bombchicken/log.prev.txt`. Owner-data installation is recorded
+separately in `bombchicken/nxextract.log`. If none of those files changes,
+inspect frontend/PortMaster placement and shell execution before assigning the
+failure to the game.
 
-1. missing `nxdeployment.json`: the package installer/extractor did not
-   deliver the complete release;
-2. receipt present but no new `bombchicken-launcher-error.*.log` or
-   `debug.log`: there is no durable proof that the launcher's early trap was
-   reached; inspect frontend/PortMaster placement, shell interpreter/parse,
-   writable storage, SIGKILL and power loss before assigning a cause;
-3. `bombchicken-launcher-error.*.log`: failure before the runtime started;
-4. `debug.log`: runtime phases after bootstrap; `nxextract.log` covers the
-   owner-data installer.
-
-A script cannot log before the operating system or frontend executes it. If
-the receipt is present and neither launcher nor runtime log exists, start at
-the frontend/launcher boundary rather than treating silence as a game crash.
+A script cannot log before the operating system or frontend executes it. If no
+launcher or runtime log exists, start at the frontend/launcher boundary rather
+than treating silence as a game crash.
 
 ## Português
 
@@ -90,11 +72,7 @@ versão Android v44/build 45 para `arm64-v8a`.
    <ROMS>/ports/Bomb Chicken.sh
    <ROMS>/ports/bombchicken/
    ├── bombchicken-nextos
-   ├── nxbootstrap-0.5.1.sh
-   ├── nxbootstrap.sh
-   ├── nxdeployment.json
    ├── nxport.json
-   ├── migrate-legacy-overlay.sh
    ├── extractor.json
    ├── nxextract/
    └── gamedata/README.txt
@@ -103,19 +81,12 @@ versão Android v44/build 45 para `arm64-v8a`.
    `<ROMS>` é a raiz escolhida pelo firmware; nenhum caminho absoluto
    específico é obrigatório. Um frontend PortMaster pode manter o
    `Bomb Chicken.sh` visível na pasta normal de scripts e `bombchicken/` na
-   pasta de dados dos ports. Mantenha os dois bootstraps: o launcher seleciona
-   a implementação 0.5.1 versionada e `nxbootstrap.sh` é a cópia de
-   compatibilidade byte-idêntica.
+   pasta de dados dos ports. O `Bomb Chicken.sh` contém toda a lógica do
+   nxbootstrap 0.6.3; não existe bootstrap auxiliar nem launcher interno.
 
-   Ao atualizar da 1.0, use o PortMaster na mesma raiz ativa de scripts/dados. A
-   primeira abertura pela entrada nova põe em quarentena somente os quatro
-   arquivos legados exatos da allowlist de SHA-256 e preserva dados do dono e
-   saves. Arquivo legado modificado ou symlink não é tocado e bloqueia a abertura
-   para revisão manual. Resíduos exatos só são removidos quando FAT/exFAT não
-   consegue manter a quarentena sem permissão de execução. O pacote não varre
-   nem altera cartão/raiz inativa; se você mudou entre as raízes mmc e sdcard do
-   muOS, desinstale ou remova explicitamente a entrada antiga, ou faça uma
-   instalação limpa.
+   Para atualizar, extraia o ZIP v1.1.4 completo sobre a mesma raiz ativa de
+   ports. Dados extraídos e saves são preservados. Se você mudou de raiz de
+   armazenamento, remova explicitamente a entrada antiga da raiz inativa.
 
 2. Coloque o **APK que você possui legalmente** em
    `<ROMS>/ports/bombchicken/gamedata/`. O nome do arquivo não importa.
@@ -128,9 +99,8 @@ versão Android v44/build 45 para `arm64-v8a`.
 4. Seu APK nunca é apagado. Depois da instalação você pode removê-lo do cartão
    para liberar espaço, mas guarde sua cópia legal para reinstalações.
 
-Não crie `run.sh`, não extraia o APK manualmente, não coloque bibliotecas
-Android no ZIP público e não edite `nxdeployment.json`. Ele é um receipt
-estático do pacote, não estado mutável do runtime.
+Não crie `run.sh`, não extraia o APK manualmente nem coloque bibliotecas
+Android no ZIP público.
 
 ### Controles
 
@@ -140,19 +110,11 @@ R3 clica. Select + Start sai pela perda de foco e pause nativos.
 
 ### Diagnóstico de abertura
 
-Há quatro fronteiras observáveis:
-
-1. `nxdeployment.json` ausente: instalador/extrator do pacote não entregou a
-   release completa;
-2. receipt presente, mas sem novo `bombchicken-launcher-error.*.log` nem
-   `debug.log`: não há prova durável de que o trap inicial do launcher foi
-   alcançado; confira posição/registro no frontend ou PortMaster,
-   interpretador/sintaxe do shell, armazenamento gravável, SIGKILL e queda de
-   energia antes de afirmar a causa;
-3. `bombchicken-launcher-error.*.log`: falha antes de iniciar o runtime;
-4. `debug.log`: fases do runtime depois do bootstrap; `nxextract.log` registra
-   o instalador dos dados do dono.
+A tentativa atual fica em `bombchicken/log.txt`; a anterior é movida para
+`bombchicken/log.prev.txt`. A instalação dos dados do dono fica separada em
+`bombchicken/nxextract.log`. Se nenhum desses arquivos mudar, confira primeiro
+o registro/caminho no frontend ou PortMaster e a execução do shell.
 
 Um script não consegue registrar nada antes de o sistema ou frontend executá-lo.
-Se o receipt existe e não há log de launcher nem de runtime, comece pela
-fronteira frontend/launcher em vez de classificar o silêncio como crash do jogo.
+Se não existe log de launcher nem de runtime, comece pela fronteira
+frontend/launcher em vez de classificar o silêncio como crash do jogo.

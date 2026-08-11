@@ -1,25 +1,88 @@
-# Bomb Chicken + Gunbrick Reloaded — NextOS
+# Bomb Chicken + Gunbrick Reloaded — NextOS / PortMaster
 
-Private source and release repository for the universal AArch64 NextOS /
-PortMaster compatibility ports of **Bomb Chicken** and **Gunbrick Reloaded**.
+![Bomb Chicken](docs/images/bombchicken/title.png)
 
-The repository contains only open-source compatibility code, framework
-components, manifests, tests and BYO-data installers. It does not contain APKs,
-Android libraries, game assets, videos, artwork, audio or saves.
+Independent universal AArch64 compatibility ports. Both releases are
+**BYO-data**: the ZIPs contain the open-source Linux integration, launcher and
+installer only. They never include an APK, Android libraries, game assets,
+videos or saves.
 
-## Ports
+## Releases
 
-- `ports/bombchicken` — release 1.1.2;
-- `ports/gunbrick` — release 0.2.0.
+| Game | Version | Download | Status |
+| --- | --- | --- | --- |
+| Bomb Chicken | 1.1.4 | [Release and checksum](https://github.com/NextOs-Ports/bombchicken-gunbrick-nextos/releases/tag/bombchicken-v1.1.4) | Validated runtime with a portable nxbootstrap 0.6.3 launcher |
+| Gunbrick Reloaded | 0.2.5 | [Release and checksum](https://github.com/NextOs-Ports/bombchicken-gunbrick-nextos/releases/tag/gunbrick-v0.2.5) | Physically validated through the bonus/phase-3 memory transition |
 
-Both ports use the self-contained nxbootstrap 0.6 launcher, NXExtract 1.2.6,
-nxcompat runtime evidence and NXRelease packaging. Video, audio, controller,
-clean extraction UI and gameplay were validated on NextOS Mali-450, X5M and
-Ark device families.
+## Quick installation
 
-Build and installation details are in each port's `README.md` and
-`INSTALLATION.md`. Release ZIPs are BYO-data and are published only through the
-GitHub Releases page.
+1. Download the ZIP for the game and extract it into the PortMaster `ports`
+   directory.
+2. Place a compatible, legally obtained Android APK in the game's
+   `gamedata/` directory.
+3. Launch the port. NXExtract 1.2.6 validates and installs the owner data
+   transactionally on first run.
 
-Canonical monorepo source commit:
-`3ed8f2bb2e9029c2c6ae7eeac07c8d6f25a9e025`.
+Wrong or incomplete game data is rejected without replacing a working
+installation. Public Linux ELFs are AArch64 and audited at GLIBC 2.27, below
+the universal GLIBC 2.30 ceiling.
+
+## What changed
+
+### Bomb Chicken 1.1.4
+
+- keeps the already validated video, audio, controller and gameplay adapter;
+- updates the self-contained nxbootstrap 0.6.3 launcher so its instance lock
+  works on firmware without the external `stat` command;
+- preserves transactional extraction, clean exit and two-instance protection.
+
+Full technical notes: [`ports/bombchicken/README.md`](ports/bombchicken/README.md).
+
+### Gunbrick Reloaded 0.2.5
+
+- bounds fake-JNI, FMOD and guest-semaphore ownership;
+- delivers Unity's Android low-memory callback before rendering when measured
+  RAM/swap pressure rises;
+- maps clean guest executable pages from their original files so the kernel
+  can reclaim them;
+- restores the raw two-axis left stick required by 3D bonus gameplay while
+  keeping the D-pad on its independent Android path;
+- passed the physical transition that previously exhausted RAM and zram.
+
+Full technical notes: [`ports/gunbrick/README.md`](ports/gunbrick/README.md).
+
+## Screenshots
+
+| Bomb Chicken gameplay | Bomb Chicken gameplay |
+| --- | --- |
+| ![Bomb Chicken gameplay 1](docs/images/bombchicken/gameplay-1.png) | ![Bomb Chicken gameplay 2](docs/images/bombchicken/gameplay-2.png) |
+
+| Gunbrick Reloaded gameplay | Gunbrick Reloaded cutscene |
+| --- | --- |
+| ![Gunbrick gameplay](docs/images/gunbrick/gameplay.png) | ![Gunbrick cutscene](docs/images/gunbrick/cutscene.png) |
+
+## Português
+
+São ports universais AArch64 independentes e no formato **BYO-data**. Baixe o
+ZIP da release, extraia na pasta `ports`, coloque um APK Android compatível e
+obtido legalmente em `gamedata/` e abra o jogo. O NXExtract valida e instala os
+dados no primeiro uso. Nenhum APK, biblioteca Android, asset, vídeo ou save é
+distribuído.
+
+- **Bomb Chicken 1.1.4:** mantém o jogo já aprovado e corrige no launcher o
+  lock de instância para firmwares sem o comando externo `stat`.
+- **Gunbrick Reloaded 0.2.5:** corrige o pico de memória na transição
+  bônus/fase 3, limita o ownership JNI/FMOD e preserva os dois eixos do
+  analógico na fase bônus 3D. A versão foi validada fisicamente do começo ao
+  gameplay além do ponto que antes encerrava o processo.
+
+Os SHA-256 ficam anexados às releases. Os screenshots são apenas material
+demonstrativo; Bomb Chicken, Gunbrick Reloaded e seus dados pertencem à Nitrome
+ou aos respectivos titulares.
+
+## Source and licenses
+
+This repository mirrors the release-relevant framework and port source from
+[`NextOs-Ports/nextos_ports_android`](https://github.com/NextOs-Ports/nextos_ports_android)
+at the commit recorded in [`SOURCE-COMMIT`](SOURCE-COMMIT). Project code is
+GPL-3.0-only unless a component states another license; NXExtract is MIT.

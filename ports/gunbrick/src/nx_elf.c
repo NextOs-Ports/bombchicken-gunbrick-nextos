@@ -246,6 +246,7 @@ nx_mod *nx_load(const char *path, const char *soname)
 
     nxloader_config_init(&config);
     config.expected_arch = NXLOADER_ARCH_AARCH64;
+    config.flags |= NXLOADER_CONFIG_FILE_BACKED_TEXT;
     config.max_file_size = GB_MAX_GUEST_FILE;
     config.max_image_size = GB_MAX_GUEST_IMAGE;
     config.trampoline_pool_size = GB_TRAMPOLINE_POOL;

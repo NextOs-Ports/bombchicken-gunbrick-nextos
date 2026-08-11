@@ -11,8 +11,8 @@ libraries, assets, videos or saves.
 
 ### Status
 
-Version 0.2.0 was validated end to end with the supported v10 ARM64 payload on
-three NextOS device families:
+Version 0.2.1 was validated end to end with the supported v10 ARM64 payload on
+three supported hardware/firmware families:
 
 - Amlogic Mali-450 using the native `mali`/framebuffer video path;
 - X5M using KMSDRM and a Mali-G310;
@@ -23,11 +23,39 @@ installed the owner payload, and the game reached rendered gameplay with
 audible SDL audio and a working controller. The tested APK was user supplied
 and is not redistributed or claimed as an original store artifact; the exact
 payload files are independently pinned by size, SHA-256 and asset-tree
-fingerprint.
+fingerprint. Version 0.2.1 also validated the original raw two-axis Android
+joystick path on the Ark/Mali-G31 target.
+
+Version 0.2.5 is the physically validated transition-memory and input release.
+Version 0.2.4 bounded fake-JNI and FMOD ownership and stopped the observed
+post-skip audio growth, but a physical Ark run still reached the same
+bonus/phase-3 transition peak and the kernel killed it after both RAM and zram
+were exhausted. The game starts its next asynchronous scene load without
+waiting for `Resources.UnloadUnusedAssets()` to finish, while this native Linux
+host had no Android Activity to deliver Unity's low-memory signal.
+
+The adapter now restores Android's reference lifecycle with refcounted local
+and global ownership, one root local frame around each host-to-guest callback,
+safe object-array elements and a locked global reference for the
+Choreographer callback shared with its thread. FMOD processing has the same
+bounded scope. The stable semaphore bridge from 0.2.3 is unchanged, including
+its intentionally non-destructive guest `sem_destroy`; the earlier destructive
+variant that caused a black screen is still rejected by the release gate.
+Host regressions exercise 4,096 simultaneous guest semaphores, 100,000 repeated
+post/wait operations and 100,000 JNI local scopes returning to zero live local
+objects. Under measured pressure, the Unity main thread now sends the native
+Android `nativeLowMemory` callback before the next render and trims the host
+heap with a cooldown. Read-only guest code is mapped from the original files,
+so roughly 56 MiB of clean executable pages can be reclaimed instead of
+occupying anonymous memory. A monitored Ark/Mali-G31 run of 0.2.5 crossed the
+bonus/phase-3 transition that previously exhausted RAM and zram, remained
+alive after Unity received the pressure callback, and preserved both the raw
+two-axis left stick in 3D bonus gameplay and the independent D-pad path. The
+same run confirmed video, audio, controls and continued gameplay end to end.
 
 ### Architecture
 
-`Gunbrick.sh` is a generated, self-contained nxbootstrap 0.6 launcher. It
+`Gunbrick.sh` is a generated, self-contained nxbootstrap 0.6.3 launcher. It
 locates PortMaster, runs NXExtract before touching guest data, verifies the
 manifest-owned runtime files, isolates game library paths from host setup,
 publishes the nxcompat contract and returns cleanly to the frontend.
@@ -49,11 +77,20 @@ fixed-RVA gameplay patches.
 
 ### Controls
 
-The loader forwards the standard Android controller buttons, both sticks,
-triggers and D-pad through Unity's native input API. `SELECT + START` requests
-a graceful exit. The optional directional-swipe compatibility quirk remains
-narrow and is enabled only by the port contract when required; it does not
-replace the native lifecycle or install a debug cursor.
+| Input | Action |
+| --- | --- |
+| D-pad / left stick | Move and orient the Gunbrick |
+| Face buttons | Native in-game actions and menu confirmation/back |
+| Right stick + R3 | Polished menu pointer and click where touch UI requires it |
+| `SELECT + START` | Graceful exit |
+
+The loader forwards the standard Android controller buttons, both raw stick
+axes, triggers and D-pad through Unity's native input API. The left stick
+deliberately keeps both simultaneous axes: the 3D bonus mode builds its
+movement from the four analog quadrants, so a host-side cardinal snap would
+make that mode ignore the stick. The D-pad continues through its independent
+Android key/hat path. The optional directional-swipe compatibility quirk
+remains disabled for this payload; no duplicate direction path is installed.
 
 ### Owner data
 
@@ -83,7 +120,9 @@ archive for verification.
 
 - `src/main.c`: Android/Unity lifecycle and graceful termination;
 - `src/nx_elf.c`: strict guest ELF loading;
-- `src/jni.c`, `src/android.c`, `src/bionic.c`: Android ABI bridge;
+- `src/jni.c`, `src/jni_refs.c`, `src/android.c`, `src/bionic.c`: Android ABI
+  bridge and bounded JNI ownership;
+- `src/pthread_bridge.c`: stable Bionic synchronization-object translation;
 - `src/egl_sdl.c`, `src/egl.c`: SDL GLES2 and raw-EGL fallback;
 - `src/input.c`, `src/audio.c`: controller and SDL audio;
 - `src/framework_bridge.c`: nxcompat runtime receipts;
@@ -99,20 +138,47 @@ of Nitrome or their respective rightsholders and are not distributed. See
 ### Estado
 
 Esta é uma camada de compatibilidade Linux AArch64 independente para a versão
-Android de **Gunbrick Reloaded**. A versão 0.2.0 foi validada do começo ao fim
-com o payload ARM64 v10 compatível em três famílias NextOS: Mali-450 por
+Android de **Gunbrick Reloaded**. A versão 0.2.1 foi validada do começo ao fim
+com o payload ARM64 v10 compatível em três famílias de hardware/firmware: Mali-450 por
 `mali`/framebuffer, X5M por KMSDRM/Mali-G310 e Ark por KMSDRM/Mali-G31.
 
 Nos três casos a interface limpa do NXExtract apareceu, os dados foram
 instalados transacionalmente e o jogo chegou ao gameplay renderizado com áudio
 audível e controle reconhecido. O APK usado no teste foi fornecido pelo usuário
 e não é redistribuído nem apresentado como artefato original da loja; os
-arquivos úteis são validados por tamanho, SHA-256 e fingerprint da árvore.
+arquivos úteis são validados por tamanho, SHA-256 e fingerprint da árvore. A
+v0.2.1 também validou no Ark o caminho Android original com os dois eixos crus
+do analógico.
+
+A versão 0.2.5 é a release de memória de transição e input validada fisicamente.
+A 0.2.4 limitou o ownership do JNI falso e do FMOD e eliminou o crescimento de
+áudio observado depois do skip, mas um teste físico no Ark ainda chegou ao
+mesmo pico da transição bônus/fase 3 e o kernel o encerrou após esgotar RAM e
+zram. O jogo começa a carregar a cena seguinte sem esperar o
+`Resources.UnloadUnusedAssets()` assíncrono terminar, enquanto este host Linux
+nativo não possuía uma Activity Android para avisar a Unity da pouca memória.
+
+O adapter agora reproduz o ciclo Android com ownership local/global por
+refcount, um frame local em cada entrada host→guest, elementos de arrays com
+ownership correto e uma referência global protegida para o callback do
+Choreographer compartilhado com outra thread. O processamento FMOD também é
+limitado por escopo. A ponte estável de semáforos da 0.2.3 não mudou, inclusive
+o `sem_destroy` propositalmente não destrutivo; a variante destrutiva que causou
+tela preta continua rejeitada pelo gate. Os testes cobrem 4.096 semáforos,
+100.000 operações post/wait e 100.000 escopos JNI voltando a zero objetos locais
+vivos. Sob pressão medida, a UnityMain agora entrega `nativeLowMemory` antes do
+próximo render e libera o heap do host com cooldown. O texto executável do
+guest fica respaldado pelos arquivos originais, permitindo ao kernel reclamar
+cerca de 56 MiB de páginas limpas. Um teste monitorado da 0.2.5 no
+Ark/Mali-G31 atravessou a transição bônus/fase 3 que antes esgotava RAM e zram,
+continuou vivo depois do callback de pressão e preservou tanto os dois eixos
+crus do analógico na fase bônus 3D quanto o caminho independente do D-pad. O
+mesmo teste confirmou vídeo, áudio, controles e continuidade do gameplay.
 
 ### Arquitetura e framework
 
 `Gunbrick.sh` é um launcher enxuto de uso e autossuficiente, gerado pelo
-nxbootstrap 0.6. Ele prepara PortMaster e o extrator, valida o payload exigido,
+nxbootstrap 0.6.3. Ele prepara PortMaster e o extrator, valida o payload exigido,
 isola as bibliotecas do jogo e devolve a tela ao frontend na saída.
 
 O adapter conserva a sequência Android real: bibliotecas, relocação e imports,
@@ -123,9 +189,18 @@ vídeo, áudio e input; não escolhe solução por IP ou nome de aparelho.
 
 ### Controles e dados
 
-Botões, D-pad, analógicos e gatilhos seguem a API Android nativa do Unity.
-`SELECT + START` pede saída limpa. O ZIP é BYO e não contém APK, bibliotecas
-Android, assets, vídeos nem saves.
+| Entrada | Ação |
+| --- | --- |
+| D-pad / analógico esquerdo | Mover e orientar o Gunbrick |
+| Botões frontais | Ações nativas e confirmar/voltar nos menus |
+| Analógico direito + R3 | Mover a seta e clicar quando a interface touch exigir |
+| `SELECT + START` | Saída limpa |
+
+Botões, D-pad, os dois eixos crus dos analógicos e gatilhos seguem a API Android
+nativa do Unity. A fase bônus 3D depende dos quadrantes formados por X e Y ao
+mesmo tempo, portanto não há snap cardinal no host; o D-pad preserva seu caminho
+Android independente. `SELECT + START` pede saída limpa. O ZIP é BYO e não
+contém APK, bibliotecas Android, assets, vídeos nem saves.
 
 Coloque um APK ARM64 compatível do Gunbrick Reloaded v10 em
 `gunbrick/gamedata/` e abra o port. O NXExtract 1.2.6 verifica o pacote
