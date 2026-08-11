@@ -18,7 +18,7 @@ cleanup_host_test() {
 trap cleanup_host_test EXIT INT TERM
 
 ${CC:-cc} -std=gnu11 -O2 -Wall -Wextra -Werror -pthread \
-  -Isrc -I../../framework/nxloader/include tests/test_pthread_bridge.c \
+  -Isrc -Ivendor/nxloader/include tests/test_pthread_bridge.c \
   -o "$HOST_TEST_DIR/test-pthread-bridge"
 "$HOST_TEST_DIR/test-pthread-bridge"
 
@@ -36,8 +36,11 @@ done
 python3 -B nxextract/nxextract.py recipe-check --recipe extractor.json
 ./build_universal.sh
 python3 -B tests/test_gunbrick_contract.py
-python3 -B ../../framework/nxrelease/nxrelease.py validate \
-  --manifest nxrelease.json
+if [ -n "${NXRELEASE:-}" ]; then
+  python3 -B "$NXRELEASE" validate --manifest nxrelease.json
+else
+  echo "NXRELEASE not set; skipping manifest validation (internal NextOS release tool)"
+fi
 
 DRY_ADD=$(git -C "$REPO_ROOT" add -n --all ports/gunbrick)
 if grep -E \

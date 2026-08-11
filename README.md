@@ -82,7 +82,6 @@ ou aos respectivos titulares.
 
 ## Source and licenses
 
-This repository mirrors the release-relevant framework and port source from
-[`NextOs-Ports/nextos_ports_android`](https://github.com/NextOs-Ports/nextos_ports_android)
-at the commit recorded in [`SOURCE-COMMIT`](SOURCE-COMMIT). Project code is
-GPL-3.0-only unless a component states another license; NXExtract is MIT.
+This repository contains the complete public source of both ports. Project
+code is GPL-3.0-only unless a component states another license; NXExtract is
+MIT.

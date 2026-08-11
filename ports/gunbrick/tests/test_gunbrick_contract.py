@@ -85,13 +85,17 @@ def check_launcher_and_contract() -> None:
         require(not (PORT / retired).exists(),
                 f"retired launcher artifact remains: {retired}")
 
+    # The launcher generator is part of the internal NextOS framework and is
+    # not distributed; regeneration is only checked on internal machines.
     generator = REPO / "framework/nxbootstrap/tools/generate-port.py"
-    with tempfile.TemporaryDirectory(prefix="gunbrick-launcher-") as temp:
-        run(sys.executable, str(generator), str(PORT / "nxport.json"),
-            "--output", temp)
-        generated = Path(temp) / "Gunbrick.sh"
-        require(generated.read_bytes() == (PORT / "Gunbrick.sh").read_bytes(),
-                "checked-in launcher is stale")
+    if generator.exists():
+        with tempfile.TemporaryDirectory(prefix="gunbrick-launcher-") as temp:
+            run(sys.executable, str(generator), str(PORT / "nxport.json"),
+                "--output", temp)
+            generated = Path(temp) / "Gunbrick.sh"
+            require(generated.read_bytes() ==
+                    (PORT / "Gunbrick.sh").read_bytes(),
+                    "checked-in launcher is stale")
 
 
 def check_owner_recipe() -> None:

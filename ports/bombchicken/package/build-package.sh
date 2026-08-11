@@ -10,7 +10,9 @@ umask 077
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 PORT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd -P)
 REPO_ROOT=$(CDPATH= cd -- "$PORT_DIR/../.." && pwd -P)
-NXRELEASE="$REPO_ROOT/framework/nxrelease/nxrelease.py"
+# NXRelease is the internal NextOS release tool; it is not distributed with
+# this repository. Point NXRELEASE at a checkout to package a release.
+NXRELEASE=${NXRELEASE:?NXRELEASE must point at the internal nxrelease.py (tool not distributed)}
 NXRELEASE_VERSION=0.2.5
 NXRELEASE_SHA256=097ef954261d7e31fb4a759caf2ebda9be02f069b1968e3f7b379d92f51e732f
 MANIFEST="$PORT_DIR/nxrelease.json"
