@@ -231,6 +231,9 @@ def check_source_contract() -> None:
     main = read_text("src/main.c")
     contract = read_text("src/contract.c")
     input_source = read_text("src/input.c")
+    prefs_source = read_text("src/playerprefs_fix.c")
+    prefs_header = read_text("src/playerprefs_fix.h")
+    prefs_test = read_text("tests/test_playerprefs_overloads.c")
     jni = read_text("src/jni.c")
     egl = read_text("src/egl.c")
     egl_sdl = read_text("src/egl_sdl.c")
@@ -266,6 +269,29 @@ def check_source_contract() -> None:
             "every stencil-forcing path must share the explicit opt-in")
     require("cursor_enabled = getenv(\"BC_CURSOR\")" in input_source,
             "menu cursor is not opt-in")
+    for token in (
+        "BC_PLAYERPREFS_GETSTRING_DEFAULT 0x219225cu",
+        "BC_PLAYERPREFS_GETSTRING_EMPTY   0x21922a0u",
+        "bc_playerprefs_getstring_default_hook",
+        "bc_playerprefs_getstring_empty_hook",
+        "bc_playerprefs_fix_configure",
+    ):
+        require(token in input_source, f"PlayerPrefs overload patch missing: {token}")
+    require(re.search(
+        r"bc_playerprefs_getstring_default_hook\s*\(void \*key_string,\s*"
+        r"void \*default_string,\s*void \*method\)",
+        prefs_source, re.MULTILINE) is not None,
+        "GetString(key, defaultValue) IL2CPP ABI drift")
+    require(re.search(
+        r"bc_playerprefs_getstring_empty_hook\s*\(void \*key_string,\s*"
+        r"void \*method\)", prefs_source, re.MULTILINE) is not None,
+        "GetString(key) IL2CPP ABI drift")
+    require("arguments declared by C# followed by MethodInfo*" in prefs_header,
+            "hidden IL2CPP MethodInfo ABI warning disappeared")
+    require("NEVER_SAVED" in prefs_test and
+            "result != method_sentinel" in prefs_test and
+            "strcmp(result, \"\") == 0" in prefs_test,
+            "clean-save/missing-key regression coverage disappeared")
 
     lifecycle = [
         "[bc] initJni...",
@@ -334,7 +360,25 @@ def check_build_policy() -> None:
 
 
 def check_public_tree() -> None:
-    require(read_text("version.txt").strip() == "1.1.6", "port version drift")
+    require(read_text("version.txt").strip() == "1.1.7", "port version drift")
+    owner_identity = (
+        "com.nitrome.bombchicken",
+        "arm64-v8a",
+        "133,951,858",
+        "133.951.858",
+        "0501f71e90412502dfc7c74a0d81adbe822daa3c11fe8f667c0e4e9e6016b32b",
+    )
+    installation = read_text("INSTALLATION.md")
+    gamedata_readme = read_text("gamedata/README.txt")
+    for token in owner_identity:
+        require(token in installation or token.replace(",", ".") in installation,
+                f"INSTALLATION.md lacks exact owner identity: {token}")
+        require(token in gamedata_readme or
+                token.replace(",", ".") in gamedata_readme,
+                f"gamedata README lacks exact owner identity: {token}")
+    require("nxbootstrap 0.6.8" in installation and
+            "v1.1.7" in installation,
+            "INSTALLATION.md contains stale launcher/release instructions")
     for legacy in ("run.sh", "es_map.sh", "es2sdl.awk"):
         require(not (PORT / legacy).exists(), f"legacy helper remains: {legacy}")
     for path in PORT.rglob("*"):
@@ -439,7 +483,7 @@ def check_release_manifest() -> None:
     require(release.get("source_root") == ".", "NXRelease source_root drift")
     package = release.get("package", {})
     require(package.get("id") == "bombchicken", "release package id drift")
-    require(package.get("version") == "1.1.6", "release package version drift")
+    require(package.get("version") == "1.1.7", "release package version drift")
     require(package.get("profile") == "universal-portmaster",
             "release profile drift")
     require(package.get("launcher") == "Bomb Chicken.sh",
@@ -453,6 +497,9 @@ def check_release_manifest() -> None:
             "release nxport pin is stale")
     require(package.get("license", {}).get("spdx_id") == "GPL-3.0-only",
             "release license drift")
+    require(package.get("license", {}).get("source_url") ==
+            "https://github.com/NextOs-Ports/bombchicken-gunbrick-nextos",
+            "release source URL is not the public canonical repository")
     require(release.get("release", {}).get("max_glibc") == "2.30",
             "release GLIBC ceiling drift")
 

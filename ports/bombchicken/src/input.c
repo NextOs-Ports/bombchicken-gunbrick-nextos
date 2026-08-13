@@ -11,7 +11,6 @@
 
 #define _GNU_SOURCE
 #include <SDL2/SDL.h>
-#include <ctype.h>
 #include <fcntl.h>
 #include <linux/input.h>
 #include <math.h>
@@ -27,6 +26,7 @@
 
 #include "bc.h"
 #include "nx_elf.h"
+#include "playerprefs_fix.h"
 
 static SDL_GameController *controller;
 /*
@@ -934,61 +934,19 @@ static void bc_update_level_completion(void *self, int32_t completion,
  * do wrapper icall (RVA do dump DESTE jogo) passa a ler o NOSSO store — a
  * mesma tabela que o putString/apply do jogo ja alimenta.  Valores ficam
  * urlencodados no store (marca do PlayerPrefs v2); decodificar ao devolver.
- * Chave ausente devolve o default managed intacto. */
-#define BC_PLAYERPREFS_GETSTRING 0x21922a0u
-
-static void bc_urldecode(char *s)
-{
-    char *out = s;
-    for (; *s; s++) {
-        if (s[0] == '%' && isxdigit((unsigned char)s[1]) &&
-            isxdigit((unsigned char)s[2])) {
-            char hex[3] = { s[1], s[2], 0 };
-            *out++ = (char)strtol(hex, NULL, 16);
-            s += 2;
-        } else {
-            *out++ = *s;
-        }
-    }
-    *out = '\0';
-}
-
-static void *bc_playerprefs_getstring(void *key_string, void *default_string,
-                                      void *method)
-{
-    (void)method;
-    char key[256];
-    il2cpp_string_ascii(key_string, key, sizeof key);
-    static char value[8192];
-    int found = key[0] && bc_prefs_get_string(key, value, sizeof value);
-    if (!found && strchr(key, ' ')) {
-        /* Chaves historicas foram gravadas urlencodadas ("music%20enabled"). */
-        char encoded[512];
-        size_t n = 0;
-        for (const char *p = key; *p && n + 4 < sizeof encoded; p++) {
-            if (*p == ' ') {
-                memcpy(encoded + n, "%20", 3);
-                n += 3;
-            } else {
-                encoded[n++] = *p;
-            }
-        }
-        encoded[n] = '\0';
-        found = bc_prefs_get_string(encoded, value, sizeof value);
-    }
-    if (!found)
-        return default_string;
-    bc_urldecode(value);
-    void *managed = il2cpp_string_new_p ? il2cpp_string_new_p(value) : NULL;
-    if (getenv("BC_PREF_TRACE")) {
-        char check[64] = "";
-        il2cpp_string_ascii(managed, check, sizeof check);
-        fprintf(stderr,
-                "[bc/pref] GetString*(\"%s\") -> \"%.60s\" (managed=%p relido "
-                "\"%.40s\")\n", key, value, managed, check);
-    }
-    return managed ? managed : default_string;
-}
+ *
+ * ATENCAO A ABI DOS OVERLOADS: no IL2CPP, os argumentos C# vêm primeiro e o
+ * MethodInfo* oculto vem por ultimo. O RVA 0x21922A0 e' GetString(key), logo
+ * sua ABI tem DOIS ponteiros; trata-lo como GetString(key, defaultValue,
+ * MethodInfo*) faz uma chave ausente devolver o MethodInfo* como System.String.
+ * Isso passou com save populado e deixou New Game preto num save limpo.
+ *
+ * Os dois corpos e ABIs ficam separados e cobertos por teste host:
+ *   0x219225C GetString(string key, string defaultValue)
+ *   0x21922A0 GetString(string key)
+ * Nunca selecionar patch IL2CPP somente pelo nome do metodo. */
+#define BC_PLAYERPREFS_GETSTRING_DEFAULT 0x219225cu
+#define BC_PLAYERPREFS_GETSTRING_EMPTY   0x21922a0u
 
 static void install_playerprefs_string_fix(nx_mod *il2cpp)
 {
@@ -1009,10 +967,15 @@ static void install_playerprefs_string_fix(nx_mod *il2cpp)
                         "GetString desarmado\n");
         return;
     }
-    replace_body(il2cpp->base, BC_PLAYERPREFS_GETSTRING,
-                 (void *)bc_playerprefs_getstring);
+    bc_playerprefs_fix_configure(bc_prefs_get_string, il2cpp_string_new_p,
+                                 il2cpp_string_ascii);
+    replace_body(il2cpp->base, BC_PLAYERPREFS_GETSTRING_DEFAULT,
+                 (void *)bc_playerprefs_getstring_default_hook);
+    replace_body(il2cpp->base, BC_PLAYERPREFS_GETSTRING_EMPTY,
+                 (void *)bc_playerprefs_getstring_empty_hook);
     fprintf(stderr,
-            "[bc/save] PlayerPrefs.GetString lendo o store persistido\n");
+            "[bc/save] PlayerPrefs.GetString lendo o store persistido "
+            "(2 overloads)\n");
 }
 
 /* Bomb Chicken uses Rewired, not InControl, and the RVAs above belong to a

@@ -1,7 +1,10 @@
 # Installation / Instalação
 
-The public package contains no Bomb Chicken game data. You must own the
-Android v44/build 45 release for `arm64-v8a`.
+The public package contains no Bomb Chicken game data. The accepted owner-data
+identity is Bomb Chicken Android v44/build 45, package
+`com.nitrome.bombchicken`, ABI `arm64-v8a`, APK size **133,951,858 bytes** and
+APK SHA-256
+`0501f71e90412502dfc7c74a0d81adbe822daa3c11fe8f667c0e4e9e6016b32b`.
 
 ## English
 
@@ -21,10 +24,10 @@ Android v44/build 45 release for `arm64-v8a`.
    `<ROMS>` is the root chosen by your firmware; no particular absolute path
    is required. A PortMaster frontend may place the visible `Bomb Chicken.sh`
    in its normal scripts directory while keeping `bombchicken/` in the ports
-   data directory. `Bomb Chicken.sh` contains the complete nxbootstrap 0.6.3
+   data directory. `Bomb Chicken.sh` contains the complete nxbootstrap 0.6.8
    logic; there is no companion bootstrap or nested launcher.
 
-   To update, extract the complete v1.1.4 ZIP over the same active ports root.
+   To update, extract the complete v1.1.7 ZIP over the same active ports root.
    Existing extracted owner data and saves are preserved. If you moved between
    storage roots, remove the old menu entry from the inactive root explicitly.
 
@@ -62,8 +65,11 @@ than treating silence as a game crash.
 
 ## Português
 
-O pacote público não contém dados de Bomb Chicken. Você precisa possuir a
-versão Android v44/build 45 para `arm64-v8a`.
+O pacote público não contém dados de Bomb Chicken. A identidade aceita dos
+dados do dono é Bomb Chicken Android v44/build 45, pacote
+`com.nitrome.bombchicken`, ABI `arm64-v8a`, APK com **133.951.858 bytes** e
+SHA-256
+`0501f71e90412502dfc7c74a0d81adbe822daa3c11fe8f667c0e4e9e6016b32b`.
 
 1. Extraia o ZIP completo da release na pasta **ports** do seu firmware,
    preservando a estrutura:
@@ -82,9 +88,9 @@ versão Android v44/build 45 para `arm64-v8a`.
    específico é obrigatório. Um frontend PortMaster pode manter o
    `Bomb Chicken.sh` visível na pasta normal de scripts e `bombchicken/` na
    pasta de dados dos ports. O `Bomb Chicken.sh` contém toda a lógica do
-   nxbootstrap 0.6.3; não existe bootstrap auxiliar nem launcher interno.
+   nxbootstrap 0.6.8; não existe bootstrap auxiliar nem launcher interno.
 
-   Para atualizar, extraia o ZIP v1.1.4 completo sobre a mesma raiz ativa de
+   Para atualizar, extraia o ZIP v1.1.7 completo sobre a mesma raiz ativa de
    ports. Dados extraídos e saves são preservados. Se você mudou de raiz de
    armazenamento, remova explicitamente a entrada antiga da raiz inativa.
 

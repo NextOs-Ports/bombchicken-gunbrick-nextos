@@ -11,7 +11,7 @@ videos or saves.
 
 | Game | Version | Download | Status |
 | --- | --- | --- | --- |
-| Bomb Chicken | 1.1.4 | [Release and checksum](https://github.com/NextOs-Ports/bombchicken-gunbrick-nextos/releases/tag/bombchicken-v1.1.4) | Validated runtime with a portable nxbootstrap 0.6.3 launcher |
+| Bomb Chicken | 1.1.7 | [Release and checksum](https://github.com/NextOs-Ports/bombchicken-gunbrick-nextos/releases/tag/bombchicken-v1.1.7) | Clean-save/New Game fix physically validated through phase 2 |
 | Gunbrick Reloaded | 0.2.5 | [Release and checksum](https://github.com/NextOs-Ports/bombchicken-gunbrick-nextos/releases/tag/gunbrick-v0.2.5) | Physically validated through the bonus/phase-3 memory transition |
 
 ## Quick installation
@@ -27,14 +27,21 @@ Wrong or incomplete game data is rejected without replacing a working
 installation. Public Linux ELFs are AArch64 and audited at GLIBC 2.27, below
 the universal GLIBC 2.30 ceiling.
 
+## Community
+
+💬 **Discord:** [discord.gg/DHfY62eDNN](https://discord.gg/DHfY62eDNN)
+
 ## What changed
 
-### Bomb Chicken 1.1.4
+### Bomb Chicken 1.1.7
 
-- keeps the already validated video, audio, controller and gameplay adapter;
-- updates the self-contained nxbootstrap 0.6.3 launcher so its instance lock
-  works on firmware without the external `stat` command;
-- preserves transactional extraction, clean exit and two-instance protection.
+- fixes the two exact IL2CPP `PlayerPrefs.GetString` overload ABIs;
+- returns a real managed empty string when a clean save requests a missing key,
+  instead of misreading the hidden `MethodInfo*` as `defaultValue`;
+- passed physical tests with an existing phase-3 save and from no save through
+  New Game, tutorial, save creation and phase 2;
+- keeps the portable nxbootstrap 0.6.8 launcher, transactional extraction,
+  clean lifecycle exit and two-instance protection.
 
 Full technical notes: [`ports/bombchicken/README.md`](ports/bombchicken/README.md).
 
@@ -69,8 +76,9 @@ obtido legalmente em `gamedata/` e abra o jogo. O NXExtract valida e instala os
 dados no primeiro uso. Nenhum APK, biblioteca Android, asset, vídeo ou save é
 distribuído.
 
-- **Bomb Chicken 1.1.4:** mantém o jogo já aprovado e corrige no launcher o
-  lock de instância para firmwares sem o comando externo `stat`.
+- **Bomb Chicken 1.1.7:** corrige as ABIs dos dois overloads IL2CPP de
+  `PlayerPrefs.GetString`. Foi validado fisicamente com save existente e, sem
+  save, do New Game até a fase 2, incluindo criação do novo progresso e saída.
 - **Gunbrick Reloaded 0.2.5:** corrige o pico de memória na transição
   bônus/fase 3, limita o ownership JNI/FMOD e preserva os dois eixos do
   analógico na fase bônus 3D. A versão foi validada fisicamente do começo ao
@@ -79,6 +87,11 @@ distribuído.
 Os SHA-256 ficam anexados às releases. Os screenshots são apenas material
 demonstrativo; Bomb Chicken, Gunbrick Reloaded e seus dados pertencem à Nitrome
 ou aos respectivos titulares.
+
+### Comunidade
+
+Dúvidas, relatos de teste e conversa sobre os ports:
+https://discord.gg/DHfY62eDNN
 
 ## Source and licenses
 

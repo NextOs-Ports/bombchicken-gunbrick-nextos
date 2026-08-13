@@ -62,6 +62,15 @@ for compiler in gcc clang; do
   ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1 \
     UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
     "$test_binary"
+
+  prefs_binary="$WORK_ROOT/test-playerprefs-$compiler"
+  "$compiler" "${SANITIZER_FLAGS[@]}" \
+    "$PORT_DIR/src/playerprefs_fix.c" \
+    "$PORT_DIR/tests/test_playerprefs_overloads.c" \
+    -o "$prefs_binary"
+  ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1 \
+    UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+    "$prefs_binary"
 done
 
 gcc -std=c11 -D_POSIX_C_SOURCE=200809L -I"$PORT_DIR/src" \
@@ -73,6 +82,17 @@ clang -std=c11 -D_POSIX_C_SOURCE=200809L -I"$PORT_DIR/src" \
   -Xanalyzer -analyzer-output=text \
   "$PORT_DIR/src/contract.c" "$PORT_DIR/tests/test_contract_tokens.c" \
   >"$WORK_ROOT/clang-analyzer.txt" 2>&1
+gcc -std=c11 -D_POSIX_C_SOURCE=200809L -I"$PORT_DIR/src" \
+  -Wall -Wextra -Werror -pedantic -fanalyzer -fsyntax-only \
+  "$PORT_DIR/src/playerprefs_fix.c" \
+  "$PORT_DIR/tests/test_playerprefs_overloads.c" \
+  >"$WORK_ROOT/gcc-playerprefs-analyzer.txt" 2>&1
+clang -std=c11 -D_POSIX_C_SOURCE=200809L -I"$PORT_DIR/src" \
+  -Wall -Wextra -Werror -pedantic --analyze \
+  -Xanalyzer -analyzer-output=text \
+  "$PORT_DIR/src/playerprefs_fix.c" \
+  "$PORT_DIR/tests/test_playerprefs_overloads.c" \
+  >"$WORK_ROOT/clang-playerprefs-analyzer.txt" 2>&1
 
 contract_args=()
 if [[ ${BC_PREFREEZE:-0} == 1 ]]; then

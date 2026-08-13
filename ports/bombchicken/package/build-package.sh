@@ -16,7 +16,7 @@ NXRELEASE=${NXRELEASE:?NXRELEASE must point at the internal nxrelease.py (tool n
 NXRELEASE_VERSION=0.2.6
 NXRELEASE_SHA256=f7ba3eda7d3d9e4318f5e8d83d16f05ea71b5d62c66961275df78a82cf6aa769
 MANIFEST="$PORT_DIR/nxrelease.json"
-DESTINATION=${1:-"$PORT_DIR/.release/bombchicken-1.1.6"}
+DESTINATION=${1:-"$PORT_DIR/.release/bombchicken-1.1.7"}
 ARCHIVE_NAME=bombchicken.zip
 
 fail() {
