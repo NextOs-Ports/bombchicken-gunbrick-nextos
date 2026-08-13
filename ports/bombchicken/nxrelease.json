@@ -3,7 +3,7 @@
   "source_root": ".",
   "package": {
     "id": "bombchicken",
-    "version": "1.1.6",
+    "version": "1.1.7",
     "profile": "universal-portmaster",
     "launcher": "Bomb Chicken.sh",
     "launcher_chain": [
@@ -18,7 +18,7 @@
     "port_dir": "bombchicken",
     "license": {
       "spdx_id": "GPL-3.0-only",
-      "source_url": "https://github.com/NextOs-Ports/nextos_ports_android",
+      "source_url": "https://github.com/NextOs-Ports/bombchicken-gunbrick-nextos",
       "file": "bombchicken/LICENSE"
     }
   },
@@ -89,7 +89,7 @@
       "target": "Bomb Chicken.sh",
       "kind": "launcher",
       "mode": "0755",
-      "sha256": "c4966a2e479fb7b9132a6ff5211e3d16ac7711347e8045cf2f79efffe490e2af"
+      "sha256": "0314c85793fce8d65ab5855602891f6a307c6d2795374efc6a917e88815fff9a"
     },
     {
       "source": "nxport.json",
@@ -106,7 +106,7 @@
       "architecture": "aarch64",
       "build_profile": "universal-low-glibc",
       "provenance": "build.sh; pinned offline Debian Buster image sha256:036c7910ea53bc78cc213452afa92fa83d55de1c51ae54f315af58b5a41a45cf; target sysroot used for headers only",
-      "sha256": "129aaca41f7a9761832f34779bb0a2ef0b2e0dcca25506cf9ff3d27f399c4236",
+      "sha256": "77c37956c9fcd16298d672949dc39958a2b755a7f387720c23ad8f131a4a1703",
       "needed": [
         "libSDL2-2.0.so.0",
         "libc.so.6",
@@ -123,14 +123,14 @@
       "target": "bombchicken/README.md",
       "kind": "payload",
       "mode": "0644",
-      "sha256": "a2d26f25359ce5551b48a0de9b29e9177295bf7d6138238690ff5319e7968c41"
+      "sha256": "6dc11ceed42509fc50d63f5408ee2f3759116fc49c79020f6dff71659c7956e2"
     },
     {
       "source": "INSTALLATION.md",
       "target": "bombchicken/INSTALLATION.md",
       "kind": "payload",
       "mode": "0644",
-      "sha256": "9c4bfb6162a56e9f1219c6368dcde07c52a856efaeb63f43b460a11881df14f0"
+      "sha256": "94490b369fcea6f98df4a0a091e147f4634214e8afe498bfab0cbd7a554a6b16"
     },
     {
       "source": "NOTICE.md",
@@ -151,14 +151,14 @@
       "target": "bombchicken/version.txt",
       "kind": "payload",
       "mode": "0644",
-      "sha256": "2f66e2158a2645e2455e374272c8deb113173dca586f9159f813519a50436c32"
+      "sha256": "f2fb797db5b32c15ac4c67b2180b593bf46c768ba1d69971fecbef1d9afb1975"
     },
     {
       "source": "gamedata/README.txt",
       "target": "bombchicken/gamedata/README.txt",
       "kind": "payload",
       "mode": "0644",
-      "sha256": "bf251767c0cd9c05065076e39c1134d92848e8df237102f05487cfb40bd2ff3d"
+      "sha256": "1057c3d6b0f80a84e601b2273af39ca3b6f329784fbdc74f95a44da54f216a01"
     },
     {
       "source": "extractor.json",

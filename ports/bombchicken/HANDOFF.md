@@ -279,19 +279,49 @@ objeto devolve um objeto vivo daquela classe (e `""` para `String`), nunca
     multi-CFW. Os dados locais ignorados (`gamedata/`, `stage/`, libs e saves)
     foram apenas lidos/hashados para formular a receita e não foram alterados.
 
+- **s6 (2026-08-13) — NEW GAME PRETO APENAS EM SAVE LIMPO: CAUSA E
+  REGRESSÃO CRAVADAS.** O render continuava vivo e o mesmo build funcionava
+  com save existente, portanto não era NXExtract, EGL nem uma falha genérica
+  do framework. Era ABI incorreta no adapter do Bomb Chicken.
+  - O dump deste jogo possui dois wrappers distintos:
+    `0x219225C = PlayerPrefs.GetString(string key, string defaultValue)` e
+    `0x21922A0 = PlayerPrefs.GetString(string key)`.
+  - A correção 1.1.6 substituía `0x21922A0`, mas declarava o hook com três
+    ponteiros, como se aquele RVA fosse o overload com `defaultValue`. No ABI
+    IL2CPP de método estático, os argumentos C# vêm primeiro e o
+    `MethodInfo*` oculto vem por último. Assim, numa chave ausente, o hook
+    devolvia o próprio `MethodInfo*` como se fosse `System.String`. Saves já
+    preenchidos escondiam o erro; `New Game` em instalação limpa o ativava.
+  - A 1.1.7 separa os dois RVAs e assinaturas. O overload com default preserva
+    exatamente o objeto default; o overload de um argumento fabrica uma
+    string managed vazia quando a chave ainda não existe. A lógica isolada em
+    `playerprefs_fix.c` é exercitada por GCC e Clang com ASan/UBSan, incluindo
+    chave inexistente, ponteiro-sentinela de `MethodInfo*`, valor persistido,
+    URL decode e chave histórica com espaço.
+  - **Regra permanente:** nunca escolher um patch IL2CPP apenas pelo nome do
+    método. Registrar RVA + assinatura completa de cada overload, incluindo o
+    `MethodInfo*` oculto, e obrigar teste do estado inicial/ausente — não apenas
+    do save já populado. Esta é uma quirk opt-in do adapter v44; não promover
+    seu comportamento a default do framework.
+  - **Prova física 1.1.7:** no aparelho AArch64 Mali-G31/dArkOSRE autorizado, o
+    mesmo loader abriu primeiro um save existente até a fase 3. O save foi
+    então movido para backup recuperável e a abertura limpa registrou
+    `STARTED 1ST`, `STARTING GROUP:0`, criou um novo save, terminou o tutorial,
+    atualizou `grupo 0 -> 1` e carregou `R1G1`/fase 2 sem tela preta,
+    `Exception` ou `NullReference`. SELECT+START também saiu pelo lifecycle
+    normal. Uma tentativa anterior com música/input travados tinha duas
+    instâncias concorrentes; depois de zerar os processos e abrir exatamente
+    uma instância, a saída foi repetida com sucesso. Nunca lançar a segunda.
+
 ## O QUE FALTA
 
-1. [x] nxbootstrap 0.5.1 fixado (`71bd91ef...` nos dois arquivos), launcher,
-   receipt e nxport regenerados byte-idênticos; NXRelease 0.2.5 fixado e
-   manifesto schema v2 validado.
-2. [x] Gate host final: GCC+Clang ASan/UBSan, dois loaders idênticos
-   (`22d2cbde...`, `GLIBC_2.27`), extração exata em cópia temporária e dois ZIPs
-   idênticos. O ZIP 1.1.0 `a6674748...` foi substituído pelo follow-up 1.1.1,
-   SHA-256 `4b70b5add837f696da0179175db7d1f2b01d9b476fafc8d53f149e8470f82d0e`.
-   O pacote mantém um único `.sh` top-level, zero `run.sh`, zero dados
-   proprietários e dois ELFs AArch64 auditados.
-3. Validar **esse mesmo ZIP e seu hash** primeiro no baseline físico NextOS já
-   comprovado; somente depois validar um segundo stack/CFW antes de qualquer
-   afirmação multi-device.
+1. [x] nxbootstrap 0.6.8 autocontido, sem `stat` externo, launcher único;
+   NXRelease 0.2.6 e manifesto schema v2 fixados.
+2. [x] Gate host 1.1.7: GCC+Clang ASan/UBSan para os dois overloads, inclusive
+   save inexistente; dois loaders idênticos (`77c37956...`, `GLIBC_2.27`),
+   extração exata em cópia temporária e auditoria dos dois ELFs do pacote.
+3. [x] Runtime 1.1.7 validado fisicamente com save existente, save limpo,
+   transição para fase 2, novo save e saída. A evidência é restrita às famílias
+   já nomeadas; não ampliar para “todos os devices”.
 4. Opcional e posterior à paridade: investigar os 43–46 fps de gameplay por
    orçamento de textura/`glGet*`, sem atalhos de shader ou lifecycle.

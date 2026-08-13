@@ -33,12 +33,6 @@ nxbootstrap_write_early_log() {
 nxbootstrap_on_exit() {
   local status=$1
   nxbootstrap_write_early_log "$status"
-  # Every exit path must hand the console back: the launcher hides the cursor
-  # and clears the panel early on, and an abort that skips the normal reset
-  # leaves the frontend behind a black screen (reported as "PortMaster
-  # stopped working").  \033c on a dead tty is harmless.
-  [ -n "${CUR_TTY:-}" ] && [ -c "$CUR_TTY" ] && \
-    printf '\033c' > "$CUR_TTY" 2>/dev/null
   nxbootstrap_finish
   return "$status"
 }
