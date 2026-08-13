@@ -3,7 +3,7 @@
   "source_root": ".",
   "package": {
     "id": "bombchicken",
-    "version": "1.1.4",
+    "version": "1.1.6",
     "profile": "universal-portmaster",
     "launcher": "Bomb Chicken.sh",
     "launcher_chain": [
@@ -11,9 +11,9 @@
     ],
     "launcher_contract": {
       "generator": "nxbootstrap",
-      "version": "0.6.3",
+      "version": "0.6.8",
       "config_path": "bombchicken/nxport.json",
-      "config_sha256": "663950c88560f6dd14160aa112bb15f622463427e4b1816f410096356f2cefeb"
+      "config_sha256": "d57714150f78338efc9e6310f5d0335210acb9e44b3c0cf93aab9921b62fe333"
     },
     "port_dir": "bombchicken",
     "license": {
@@ -89,14 +89,14 @@
       "target": "Bomb Chicken.sh",
       "kind": "launcher",
       "mode": "0755",
-      "sha256": "baae233ce1e94295291f047bac94d9d128ba82de11ec9e545edf0fbd699e22a0"
+      "sha256": "c4966a2e479fb7b9132a6ff5211e3d16ac7711347e8045cf2f79efffe490e2af"
     },
     {
       "source": "nxport.json",
       "target": "bombchicken/nxport.json",
       "kind": "nxbootstrap-config",
       "mode": "0644",
-      "sha256": "663950c88560f6dd14160aa112bb15f622463427e4b1816f410096356f2cefeb"
+      "sha256": "d57714150f78338efc9e6310f5d0335210acb9e44b3c0cf93aab9921b62fe333"
     },
     {
       "source": "build/bombchicken-nextos",
@@ -106,7 +106,7 @@
       "architecture": "aarch64",
       "build_profile": "universal-low-glibc",
       "provenance": "build.sh; pinned offline Debian Buster image sha256:036c7910ea53bc78cc213452afa92fa83d55de1c51ae54f315af58b5a41a45cf; target sysroot used for headers only",
-      "sha256": "0774cd6c56432f5cf972e6d4972c5533d0f68e7a4839ac258d98fbe89d1ac448",
+      "sha256": "129aaca41f7a9761832f34779bb0a2ef0b2e0dcca25506cf9ff3d27f399c4236",
       "needed": [
         "libSDL2-2.0.so.0",
         "libc.so.6",
@@ -151,7 +151,7 @@
       "target": "bombchicken/version.txt",
       "kind": "payload",
       "mode": "0644",
-      "sha256": "2bde3ae39f59ee21201f87089cf7d215cf58ea437711e3d8e3e65fbc3078c798"
+      "sha256": "2f66e2158a2645e2455e374272c8deb113173dca586f9159f813519a50436c32"
     },
     {
       "source": "gamedata/README.txt",
@@ -216,7 +216,21 @@
       "kind": "license-notice",
       "mode": "0644",
       "sha256": "74d7d9d40e27fbfe23cb462f9608fa07cbe53ffb0b88a0da9e85dda240c2c788"
+    },
+    {
+      "source": "port.json",
+      "target": "bombchicken/port.json",
+      "kind": "portmaster-metadata",
+      "mode": "0644",
+      "sha256": "3fdb4deb16e343ca4a7d361daa8d8ae175f9a00937a3abfdc26c59fa9ab94d57"
     }
   ],
-  "exceptions": []
+  "exceptions": [],
+  "portmaster_metadata": {
+    "port_json": {
+      "path": "bombchicken/port.json",
+      "sha256": "3fdb4deb16e343ca4a7d361daa8d8ae175f9a00937a3abfdc26c59fa9ab94d57"
+    },
+    "images": []
+  }
 }

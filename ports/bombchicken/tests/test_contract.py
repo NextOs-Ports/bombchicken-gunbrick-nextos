@@ -23,9 +23,11 @@ REPO = PORT.parents[1]
 REL_PORT = PORT.relative_to(REPO).as_posix()
 
 QUIRKS = [
+    "adapter.gl-provider-probe-init-reexec",
     "game.bombchicken.menu-cursor-v44",
     "game.bombchicken.native-pause-v44",
     "game.bombchicken.nonnull-play-games-v44",
+    "game.bombchicken.playerprefs-getstring-v44",
     "game.bombchicken.present-alpha-one",
     "game.bombchicken.progress-parser-v44",
     "game.bombchicken.stencil8-v44",
@@ -214,10 +216,15 @@ def check_vendored_nxextract() -> None:
         "nxextract/run-extractor.sh": canonical / "run-extractor.sh",
         "nxextract/nxextract-ui": canonical / "ui/build/nxextract-ui",
     }
-    for relative, source in canonical_map.items():
-        require(source.is_file(), f"canonical NXExtract source missing: {source}")
-        require((PORT / relative).read_bytes() == source.read_bytes(),
-                f"vendored NXExtract has local patches: {relative}")
+    # O espelho publico nao carrega o bundle canonico (removido de proposito);
+    # la' os pins de SHA-256 acima continuam sendo a autoridade.  No monorepo,
+    # onde o canonico existe, a comparacao byte a byte segue obrigatoria.
+    if canonical.is_dir():
+        for relative, source in canonical_map.items():
+            require(source.is_file(),
+                    f"canonical NXExtract source missing: {source}")
+            require((PORT / relative).read_bytes() == source.read_bytes(),
+                    f"vendored NXExtract has local patches: {relative}")
 
 
 def check_source_contract() -> None:
@@ -327,7 +334,7 @@ def check_build_policy() -> None:
 
 
 def check_public_tree() -> None:
-    require(read_text("version.txt").strip() == "1.1.4", "port version drift")
+    require(read_text("version.txt").strip() == "1.1.6", "port version drift")
     for legacy in ("run.sh", "es_map.sh", "es2sdl.awk"):
         require(not (PORT / legacy).exists(), f"legacy helper remains: {legacy}")
     for path in PORT.rglob("*"):
@@ -386,7 +393,7 @@ def check_public_tree() -> None:
 
 
 def check_generated_framework() -> None:
-    # 0.6.3: a single self-contained launcher. No bootstrap library, no
+    # 0.6.8: a single self-contained launcher. No bootstrap library, no
     # deployment receipt, no legacy migration helper.
     launcher = PORT / "Bomb Chicken.sh"
     require(launcher.is_file() and not launcher.is_symlink(),
@@ -396,8 +403,8 @@ def check_generated_framework() -> None:
         require(not (PORT / retired).exists(),
                 f"retired 0.5.1 artifact still present: {retired}")
     launcher_text = launcher.read_text(encoding="utf-8")
-    require("nxbootstrap 0.6.3" in launcher_text,
-            "launcher does not record the 0.6.3 generator")
+    require("nxbootstrap 0.6.8" in launcher_text,
+            "launcher does not record the 0.6.8 generator")
     require("run.sh" not in launcher_text, "launcher references legacy run.sh")
     for guarantee in ("flock -n 9", 'wait "$game_pid"', "nxbootstrap_finish",
                       "pm_finish", "command ls -Lldn /proc/self/fd/9",
@@ -410,29 +417,29 @@ def check_generated_framework() -> None:
 
 
 def check_release_manifest() -> None:
-    # NXRelease itself is internal NextOS tooling and is not distributed;
-    # its implementation pin is only re-checked on internal machines.
+    # NXRelease e' ferramenta interna e nao e' distribuida; o pin da
+    # implementacao so' e' re-conferido nas maquinas que tem a arvore interna.
     release_tool = REPO / "framework/nxrelease/nxrelease.py"
     release_version = REPO / "framework/nxrelease/VERSION"
     if release_tool.exists():
-        require(release_version.read_text(encoding="utf-8").strip() == "0.2.5",
+        require(release_version.read_text(encoding="utf-8").strip() == "0.2.6",
                 "NXRelease version differs from the frozen package gate")
         require(sha256(release_tool) ==
-                "097ef954261d7e31fb4a759caf2ebda9be02f069b1968e3f7b379d92f51e732f",
-                "NXRelease 0.2.5 implementation pin drift")
+                "f7ba3eda7d3d9e4318f5e8d83d16f05ea71b5d62c66961275df78a82cf6aa769",
+                "NXRelease 0.2.6 implementation pin drift")
     package_script = read_text("package/build-package.sh")
-    require("NXRELEASE_VERSION=0.2.5" in package_script,
-            "package script does not pin NXRelease 0.2.5")
+    require("NXRELEASE_VERSION=0.2.6" in package_script,
+            "package script does not pin NXRelease 0.2.6")
     require("NXRELEASE_SHA256="
-            "097ef954261d7e31fb4a759caf2ebda9be02f069b1968e3f7b379d92f51e732f"
+            "f7ba3eda7d3d9e4318f5e8d83d16f05ea71b5d62c66961275df78a82cf6aa769"
             in package_script,
-            "package script does not pin the NXRelease 0.2.5 implementation")
+            "package script does not pin the NXRelease 0.2.6 implementation")
     release = load_json("nxrelease.json")
     require(release.get("schema_version") == 2, "NXRelease schema must be 2")
     require(release.get("source_root") == ".", "NXRelease source_root drift")
     package = release.get("package", {})
     require(package.get("id") == "bombchicken", "release package id drift")
-    require(package.get("version") == "1.1.4", "release package version drift")
+    require(package.get("version") == "1.1.6", "release package version drift")
     require(package.get("profile") == "universal-portmaster",
             "release profile drift")
     require(package.get("launcher") == "Bomb Chicken.sh",
@@ -440,7 +447,7 @@ def check_release_manifest() -> None:
     require(package.get("launcher_chain") == ["Bomb Chicken.sh"],
             "release launcher chain drift")
     launcher_contract = package.get("launcher_contract", {})
-    require(launcher_contract.get("version") == "0.6.3",
+    require(launcher_contract.get("version") == "0.6.8",
             "release bootstrap version drift")
     require(launcher_contract.get("config_sha256") == sha256(PORT / "nxport.json"),
             "release nxport pin is stale")
@@ -486,7 +493,7 @@ def check_release_manifest() -> None:
                     "bombchicken/migrate-legacy-overlay.sh"):
         require(retired not in targets,
                 f"retired 0.5.1 artifact in release manifest: {retired}")
-    require(len(entries) == 16, "release allowlist count drift")
+    require(len(entries) == 17, "release allowlist count drift")
 
 
 def version_tuple(value: str) -> tuple[int, ...]:

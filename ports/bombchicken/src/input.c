@@ -11,6 +11,7 @@
 
 #define _GNU_SOURCE
 #include <SDL2/SDL.h>
+#include <ctype.h>
 #include <fcntl.h>
 #include <linux/input.h>
 #include <math.h>
@@ -428,6 +429,51 @@ static void *bc_find_instance(void *klass)
     return exc ? NULL : instance;
 }
 
+/* Como bc_find_instance, mas enxerga objetos INATIVOS — o painel do
+ * PauseMenu vive desligado (SetActive(false)) ate' alguem mostra'-lo, e o
+ * FindObjectOfType de um argumento nao encontra inativos.  Unity 2020+
+ * tem a sobrecarga FindObjectOfType(Type, bool includeInactive). */
+static void *bc_find_instance_inactive(void *klass)
+{
+    void *type_obj = il2cpp_type_get_object_p(il2cpp_class_get_type_p(klass));
+    if (!type_obj)
+        return NULL;
+    /* Unity 2020+: FindObjectOfType(Type, bool includeInactive). */
+    void *object_class = find_managed_class("UnityEngine", "Object");
+    void *find_by_type = object_class
+        ? il2cpp_class_get_method_from_name_p(object_class,
+                                              "FindObjectOfType", 2)
+        : NULL;
+    if (find_by_type) {
+        uint8_t include_inactive = 1;
+        void *exc = NULL;
+        void *args[2] = { type_obj, &include_inactive };
+        void *instance = il2cpp_runtime_invoke_p(find_by_type, NULL, args,
+                                                 &exc);
+        if (!exc && instance)
+            return instance;
+    }
+    /* Fallback: Resources.FindObjectsOfTypeAll(Type) enxerga inativos em
+     * qualquer versao; o array il2cpp guarda o tamanho em +0x18 e os
+     * elementos a partir de +0x20. */
+    void *resources_class = find_managed_class("UnityEngine", "Resources");
+    void *find_all = resources_class
+        ? il2cpp_class_get_method_from_name_p(resources_class,
+                                              "FindObjectsOfTypeAll", 1)
+        : NULL;
+    if (!find_all)
+        return NULL;
+    void *exc = NULL;
+    void *args[1] = { type_obj };
+    void *array = il2cpp_runtime_invoke_p(find_all, NULL, args, &exc);
+    if (exc || !array)
+        return NULL;
+    int64_t length = *(int64_t *)((uint8_t *)array + 0x18);
+    if (length <= 0)
+        return NULL;
+    return ((void **)((uint8_t *)array + 0x20))[0];
+}
+
 /* Ha' um Player vivo? (classe global "Player" do jogo, nao a do Rewired —
  * namespace vazio nao casa com "Rewired").  Player so' existe com nivel
  * carregado, entao isto e' o gate "estamos jogando" para dar ao A o papel de
@@ -446,6 +492,9 @@ static int bc_player_alive(void)
  * isto nenhum botao fecha o pause.  Devolve 1 quando conseguiu chamar;
  * 0 manda o chamador cair no fallback (BACK/toque).  Fora de nivel (titulo)
  * nao ha LevelStart vivo e devolvemos 0 — o START segue como tecla normal. */
+static int bc_pause_hide_native(void);
+static int bc_pause_show_native(void);
+
 static int bc_pause_toggle_native(void)
 {
     const char *flag = getenv("BC_PAUSE_NATIVE");
@@ -497,6 +546,17 @@ static int bc_pause_toggle_native(void)
     if (input_diag)
         fprintf(stderr, "[bc/pause] PausePressed() IsPaused %d -> %d\n",
                 was_paused, now_paused);
+    /* No celular o botao ‖ da UI liga DOIS listeners: PausePressed (trava o
+       tempo) e ShowPauseMenu (SetActive do painel — puro UI, medido no dump:
+       nao mexe em timeScale).  So' invocar PausePressed pausava o jogo com a
+       tela crua, sem menu — relato do NextOS e da comunidade.  Espelhar o
+       segundo listener nos dois sentidos. */
+    if (!was_paused && now_paused) {
+        if (!bc_pause_show_native())
+            fprintf(stderr, "[bc/pause] menu de pause nao exibido\n");
+    } else if (was_paused && !now_paused) {
+        bc_pause_hide_native();
+    }
     /* Fora de nivel (titulo/intro) o PausePressed e' no-op e o estado nao
        muda: devolver 0 deixa o START seguir como tecla normal (comecar o
        jogo no titulo). */
@@ -509,6 +569,37 @@ static int bc_pause_toggle_native(void)
  * instancia viva — exatamente o que o botao de resume faria.  Roda na mesma
  * thread do nativeRender (a que executa o managed), entao runtime_invoke e'
  * seguro aqui.  BC_PAUSE_NATIVE=0 desliga para diagnostico. */
+/* Exibir o menu de pause pelo metodo do proprio jogo: e' o segundo listener
+ * do botao ‖ da UI (ShowPauseMenu = SetActive do painel, sem tocar no
+ * timeScale — conferido no dump).  Mesmo gate do resto do pause nativo. */
+static int bc_pause_show_native(void)
+{
+    const char *flag = getenv("BC_PAUSE_NATIVE");
+    if (!flag || !*flag || strcmp(flag, "0") == 0)
+        return 0;
+    if (!resolve_il2cpp_invoke_api())
+        return 0;
+    void *pause_class = find_managed_class("", "PauseMenu");
+    void *show = pause_class
+        ? il2cpp_class_get_method_from_name_p(pause_class, "ShowPauseMenu", 0)
+        : NULL;
+    void *instance = pause_class ? bc_find_instance(pause_class) : NULL;
+    if (!instance && pause_class)
+        instance = bc_find_instance_inactive(pause_class);
+    if (!show || !instance) {
+        fprintf(stderr, "[bc/pause] ShowPauseMenu/instancia ausente\n");
+        return 0;
+    }
+    void *exc = NULL;
+    il2cpp_runtime_invoke_p(show, instance, NULL, &exc);
+    if (exc) {
+        fprintf(stderr, "[bc/pause] ShowPauseMenu lancou excecao\n");
+        return 0;
+    }
+    fprintf(stderr, "[bc/pause] ShowPauseMenu() invocado no jogo\n");
+    return 1;
+}
+
 static int bc_pause_hide_native(void)
 {
     const char *flag = getenv("BC_PAUSE_NATIVE");
@@ -652,6 +743,58 @@ static void bc_debug_goto_checkpoint(int load_next)
             exc ? "EXCECAO" : "ok");
 }
 
+static void il2cpp_string_ascii(void *string, char *out, size_t size);
+
+/* Sonda do resume (token `sav`, so' com BC_GPVIRT): imprime o que o jogo
+ * responde por GetStartingWorld()/GetStartingGroup() e o que esta' persistido
+ * nas nossas prefs — o delta aponta onde o "voltou pro tutorial" se perde. */
+static void bc_debug_save_probe(void)
+{
+    if (!resolve_il2cpp_invoke_api()) {
+        fprintf(stderr, "[bc/dbg] il2cpp indisponivel\n");
+        return;
+    }
+    char world[128] = "?", group[128] = "?";
+    bc_prefs_get_string("START_WORLD", world, sizeof world);
+    bc_prefs_get_string("START_GROUP", group, sizeof group);
+    fprintf(stderr, "[bc/sav] prefs: START_WORLD='%s' START_GROUP='%s'\n",
+            world, group);
+
+    void *level_class = find_managed_class("", "LevelStart");
+    void *instance = level_class ? bc_find_instance(level_class) : NULL;
+    if (!instance) {
+        fprintf(stderr, "[bc/sav] sem LevelStart vivo\n");
+        return;
+    }
+    static const char *const getters[] = {
+        "GetStartingWorld", "GetStartingGroup", "GetCurrentWorld",
+        "get_CurrentGroupID",
+    };
+    for (size_t i = 0; i < sizeof getters / sizeof *getters; i++) {
+        void *method = il2cpp_class_get_method_from_name_p(level_class,
+                                                           getters[i], 0);
+        if (!method) {
+            fprintf(stderr, "[bc/sav] %s ausente\n", getters[i]);
+            continue;
+        }
+        void *exc = NULL;
+        void *result = il2cpp_runtime_invoke_p(method, instance, NULL, &exc);
+        char text[128] = "";
+        if (!exc && result)
+            il2cpp_string_ascii(result, text, sizeof text);
+        fprintf(stderr, "[bc/sav] %s() -> '%s'%s\n", getters[i], text,
+                exc ? " EXCECAO" : "");
+    }
+    /* Os campos da cena que vencem as prefs quando nao-vazios. */
+    void *starting_world = *(void **)((uint8_t *)instance + 0x50);
+    void *starting_group = *(void **)((uint8_t *)instance + 0x58);
+    char sw[128] = "", sg[128] = "";
+    il2cpp_string_ascii(starting_world, sw, sizeof sw);
+    il2cpp_string_ascii(starting_group, sg, sizeof sg);
+    fprintf(stderr, "[bc/sav] cena: m_StartingWorld='%s' m_StartingGroup='%s'\n",
+            sw, sg);
+}
+
 /* Sonda a FollowCam ao vivo (token `cam`): quais referencias dela estao nulas
  * quando a tela fica preta depois do checkpoint.  Offsets do dump deste jogo:
  * m_Target 0x20, m_CamComponent 0x38, m_Following 0x44, m_CurrentLevel 0x70. */
@@ -781,6 +924,97 @@ static void bc_update_level_completion(void *self, int32_t completion,
                 group, completion);
 }
 
+/* UnityEngine.PlayerPrefs::GetString devolve SEMPRE "" no managed neste
+ * ambiente: o JNI entrega o valor certo (medido: getString("START_WORLD") ->
+ * "Skull_World" no shim) e a libunity descarta o jstring antes de converter.
+ * Ints/bools passam; so' o RETORNO de string se perde.  E' o que quebrava o
+ * resume ("voltou pro tutorial"), o Continue do menu e os mapas do Rewired.
+ *
+ * Conserto no nivel do jogo, mesma tecnica do UpdateLevelCompletion: o corpo
+ * do wrapper icall (RVA do dump DESTE jogo) passa a ler o NOSSO store — a
+ * mesma tabela que o putString/apply do jogo ja alimenta.  Valores ficam
+ * urlencodados no store (marca do PlayerPrefs v2); decodificar ao devolver.
+ * Chave ausente devolve o default managed intacto. */
+#define BC_PLAYERPREFS_GETSTRING 0x21922a0u
+
+static void bc_urldecode(char *s)
+{
+    char *out = s;
+    for (; *s; s++) {
+        if (s[0] == '%' && isxdigit((unsigned char)s[1]) &&
+            isxdigit((unsigned char)s[2])) {
+            char hex[3] = { s[1], s[2], 0 };
+            *out++ = (char)strtol(hex, NULL, 16);
+            s += 2;
+        } else {
+            *out++ = *s;
+        }
+    }
+    *out = '\0';
+}
+
+static void *bc_playerprefs_getstring(void *key_string, void *default_string,
+                                      void *method)
+{
+    (void)method;
+    char key[256];
+    il2cpp_string_ascii(key_string, key, sizeof key);
+    static char value[8192];
+    int found = key[0] && bc_prefs_get_string(key, value, sizeof value);
+    if (!found && strchr(key, ' ')) {
+        /* Chaves historicas foram gravadas urlencodadas ("music%20enabled"). */
+        char encoded[512];
+        size_t n = 0;
+        for (const char *p = key; *p && n + 4 < sizeof encoded; p++) {
+            if (*p == ' ') {
+                memcpy(encoded + n, "%20", 3);
+                n += 3;
+            } else {
+                encoded[n++] = *p;
+            }
+        }
+        encoded[n] = '\0';
+        found = bc_prefs_get_string(encoded, value, sizeof value);
+    }
+    if (!found)
+        return default_string;
+    bc_urldecode(value);
+    void *managed = il2cpp_string_new_p ? il2cpp_string_new_p(value) : NULL;
+    if (getenv("BC_PREF_TRACE")) {
+        char check[64] = "";
+        il2cpp_string_ascii(managed, check, sizeof check);
+        fprintf(stderr,
+                "[bc/pref] GetString*(\"%s\") -> \"%.60s\" (managed=%p relido "
+                "\"%.40s\")\n", key, value, managed, check);
+    }
+    return managed ? managed : default_string;
+}
+
+static void install_playerprefs_string_fix(nx_mod *il2cpp)
+{
+    const char *flag = getenv("BC_PREFS_STRING_FIX");
+    if (!flag || !*flag || strcmp(flag, "0") == 0) {
+        fprintf(stderr, "[bc/save] conserto do GetString nao habilitado "
+                        "pelo manifesto\n");
+        return;
+    }
+    /* O resto do resolve vive em resolve_il2cpp_invoke_api; string_new so'
+       era resolvido no bloco de bring-up (BC_IL2CPP_HOOKS) e ficava NULL na
+       release — resolver aqui, onde o conserto precisa dele. */
+    if (!il2cpp_string_new_p)
+        il2cpp_string_new_p =
+            (void *)nx_lookup_in(il2cpp, "il2cpp_string_new");
+    if (!il2cpp_string_new_p) {
+        fprintf(stderr, "[bc/save] il2cpp_string_new ausente; conserto do "
+                        "GetString desarmado\n");
+        return;
+    }
+    replace_body(il2cpp->base, BC_PLAYERPREFS_GETSTRING,
+                 (void *)bc_playerprefs_getstring);
+    fprintf(stderr,
+            "[bc/save] PlayerPrefs.GetString lendo o store persistido\n");
+}
+
 /* Bomb Chicken uses Rewired, not InControl, and the RVAs above belong to a
  * different game's libil2cpp.  Patching them here would smash unrelated code
  * (armadilha 13/17).  The hooks stay compiled but are only armed when
@@ -796,6 +1030,7 @@ static void install_progress_fix(void)
     if (!il2cpp)
         return;
     done = 1;
+    install_playerprefs_string_fix(il2cpp);
     const char *flag = getenv("BC_PROGRESS_FIX");
     if (!flag || !*flag || strcmp(flag, "0") == 0) {
         fprintf(stderr,
@@ -1031,6 +1266,10 @@ static void poll_virtual_controller(void)
                 /* Reproduz o fim de fase sem jogar: a mesma chamada que a
                    corrotina do Teleporter faz.  So' com BC_GPVIRT. */
                 bc_debug_goto_checkpoint(1);
+            } else if (!strcasecmp(token, "sav")) {
+                /* Sonda do resume: o que o jogo VE^ (GetStartingWorld/Group)
+                   contra o que esta' persistido.  So' com BC_GPVIRT. */
+                bc_debug_save_probe();
             } else if (!strncasecmp(token, "key:", 4)) {
                 /* key:N — injeta um KEYCODE Android arbitrario (bring-up). */
                 virtual_key_code = atoi(token + 4);

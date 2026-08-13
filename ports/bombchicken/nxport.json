@@ -2,9 +2,11 @@
   "architecture": "aarch64",
   "argument_mode": "game-dir-and-passthrough",
   "enabled_quirks": [
+    "adapter.gl-provider-probe-init-reexec",
     "game.bombchicken.menu-cursor-v44",
     "game.bombchicken.native-pause-v44",
     "game.bombchicken.nonnull-play-games-v44",
+    "game.bombchicken.playerprefs-getstring-v44",
     "game.bombchicken.present-alpha-one",
     "game.bombchicken.progress-parser-v44",
     "game.bombchicken.stencil8-v44"

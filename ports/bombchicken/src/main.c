@@ -526,6 +526,13 @@ int main(int argc, char **argv)
     install_fault_handler();
     setup_paths(argc > 1 ? argv[1] : NULL);
 
+    /* Firmwares com SONAME cruzado (libEGL.so.1 = Mesa sem driver) matam a
+     * Unity com "Unable to initialize EGL!" + SIGTRAP.  O probe roda antes de
+     * qualquer video e re-executa UMA vez com o blob coerente preloadado;
+     * num sistema saudavel ele inicializa, termina e nao muda nada. */
+    bc_glfix_set_argv(argv);
+    bc_glfix_probe_before_video();
+
     fprintf(stderr, "[bc] Bomb Chicken compatibility loader -- gamedir %s\n",
             bc_gamedir);
 

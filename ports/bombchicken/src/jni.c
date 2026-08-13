@@ -697,6 +697,9 @@ static const uint16_t *j_GetStringChars(void *e, jobj *s, uint8_t *copy)
     uint16_t *u = calloc((size_t)n + 1, 2);
     for (int i = 0; i < n; i++)
         u[i] = (uint8_t)s->str[i];
+    if (getenv("BC_PREF_TRACE"))
+        fprintf(stderr, "[bc/pref] GetStringChars(%p len=%d \"%s\")\n",
+                (void *)s, n, s && s->str ? s->str : "(null)");
     return u;
 }
 static void j_ReleaseStringChars(void *e, jobj *s, const uint16_t *u) { (void)e; (void)s; free((void *)u); }
@@ -705,6 +708,24 @@ static void j_GetStringUTFRegion(void *e, jobj *s, int32_t off, int32_t len, cha
     (void)e;
     if (s && s->str)
         memcpy(out, s->str + off, (size_t)len);
+    if (getenv("BC_PREF_TRACE"))
+        fprintf(stderr, "[bc/pref] GetString(UTF)Region(%p off=%d len=%d)\n",
+                (void *)s, off, len);
+}
+
+/* GetStringRegion escreve jchar (UTF-16), nao bytes — mapear a variante UTF-8
+ * aqui entregava lixo/curto para quem le por regiao.  ASCII do nosso store
+ * vira um jchar por byte. */
+static void j_GetStringRegion16(void *e, jobj *s, int32_t off, int32_t len,
+                                uint16_t *out)
+{
+    (void)e;
+    if (s && s->str)
+        for (int32_t i = 0; i < len; i++)
+            out[i] = (uint8_t)s->str[off + i];
+    if (getenv("BC_PREF_TRACE"))
+        fprintf(stderr, "[bc/pref] GetStringRegion16(%p off=%d len=%d)\n",
+                (void *)s, off, len);
 }
 
 /* --- arrays ------------------------------------------------------------ */
@@ -1882,6 +1903,11 @@ static int64_t j_Prefs_getString(jctx *c)
     jobj *value = entry && entry->type == PREF_STRING
         ? mk_string(entry->string ? entry->string : "") : dflt;
     pthread_mutex_unlock(&preferences_lock);
+    JT("SharedPreferences.getString(\"%s\") -> \"%s\"", k,
+       value && value->str ? value->str : "(null)");
+    if (getenv("BC_PREF_TRACE"))
+        fprintf(stderr, "[bc/pref] getString(\"%s\") -> \"%s\"\n", k,
+                value && value->str ? value->str : "(null)");
     return (int64_t)(uintptr_t)value;
 }
 
@@ -1894,6 +1920,8 @@ static int64_t j_Prefs_contains(jctx *c)
     int value = pref_find_locked(k) != NULL;
     pthread_mutex_unlock(&preferences_lock);
     JT("SharedPreferences.contains(\"%s\") -> %d", k, value);
+    if (getenv("BC_PREF_TRACE"))
+        fprintf(stderr, "[bc/pref] contains(\"%s\") -> %d\n", k, value);
     return value;
 }
 
@@ -2342,6 +2370,14 @@ static int64_t dispatch(void *e, jobj *self, void *mid, va_list *ap,
      * LevelStart.Awake() and the scene never advanced.  Hand back a live object
      * of the declared type instead so the flow continues; the listener simply
      * never fires, which is what an offline sign-in looks like. */
+    /* Sonda do resume: QUALQUER metodo de prefs sem handler aparece aqui —
+     * getAll() da migracao v2 da Unity e' o suspeito classico. */
+    if (getenv("BC_PREF_TRACE") && m->cls &&
+        (strstr(m->cls, "SharedPreferences") || strstr(m->cls, "Map") ||
+         strstr(m->cls, "Set") || strstr(m->cls, "Iterator")))
+        fprintf(stderr, "[bc/pref] SEM HANDLER: %s.%s%s\n",
+                m->cls, m->name, m->sig);
+
     const char *rt = strchr(m->sig, ')');
     if (rt && getenv("BC_NONNULL_OBJECT_FALLBACK") &&
         strcmp(getenv("BC_NONNULL_OBJECT_FALLBACK"), "0") != 0 &&
@@ -2781,7 +2817,7 @@ void bc_jni_init(void)
     vt[JNI_GetStringUTFLength] = j_GetStringUTFLength;
     vt[JNI_GetStringUTFChars] = j_GetStringUTFChars;
     vt[JNI_ReleaseStringUTFChars] = j_ReleaseStringUTFChars;
-    vt[JNI_GetStringRegion] = j_GetStringUTFRegion;
+    vt[JNI_GetStringRegion] = j_GetStringRegion16;
     vt[JNI_GetStringUTFRegion] = j_GetStringUTFRegion;
     vt[JNI_GetStringCritical] = j_GetStringChars;
     vt[JNI_ReleaseStringCritical] = j_ReleaseStringChars;

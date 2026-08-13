@@ -43,7 +43,13 @@ static void *libegl;
 static void *sys(const char *n)
 {
     if (!libegl) {
-        libegl = dlopen("libEGL.so.1", RTLD_NOW | RTLD_GLOBAL);
+        /* Depois do re-exec do glfix, o provider coerente tem de vencer o
+         * SONAME cruzado do sistema (dlopen por nome ignora LD_PRELOAD). */
+        const char *provider = getenv("BC_GLFIX_PROVIDER");
+        if (provider && *provider)
+            libegl = dlopen(provider, RTLD_NOW | RTLD_GLOBAL);
+        if (!libegl)
+            libegl = dlopen("libEGL.so.1", RTLD_NOW | RTLD_GLOBAL);
         if (!libegl)
             libegl = dlopen("libEGL.so", RTLD_NOW | RTLD_GLOBAL);
         if (!libegl)
@@ -71,6 +77,9 @@ static void *gl_raw(const char *name)
     if (bc_sdl_video_active())
         return bc_sdl_gl_proc(name);
     if (!libgl) {
+        const char *provider = getenv("BC_GLFIX_PROVIDER");
+        if (provider && *provider)
+            libgl = dlopen(provider, RTLD_NOW | RTLD_GLOBAL);
         static const char *const cands[] = {
             "libGLESv2.so.2", "libGLESv2.so", "libGLESv3.so", "libmali.so",
         };

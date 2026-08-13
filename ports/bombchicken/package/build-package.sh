@@ -13,10 +13,10 @@ REPO_ROOT=$(CDPATH= cd -- "$PORT_DIR/../.." && pwd -P)
 # NXRelease is the internal NextOS release tool; it is not distributed with
 # this repository. Point NXRELEASE at a checkout to package a release.
 NXRELEASE=${NXRELEASE:?NXRELEASE must point at the internal nxrelease.py (tool not distributed)}
-NXRELEASE_VERSION=0.2.5
-NXRELEASE_SHA256=097ef954261d7e31fb4a759caf2ebda9be02f069b1968e3f7b379d92f51e732f
+NXRELEASE_VERSION=0.2.6
+NXRELEASE_SHA256=f7ba3eda7d3d9e4318f5e8d83d16f05ea71b5d62c66961275df78a82cf6aa769
 MANIFEST="$PORT_DIR/nxrelease.json"
-DESTINATION=${1:-"$PORT_DIR/.release/bombchicken-1.1.4"}
+DESTINATION=${1:-"$PORT_DIR/.release/bombchicken-1.1.6"}
 ARCHIVE_NAME=bombchicken.zip
 
 fail() {

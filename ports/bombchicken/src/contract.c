@@ -43,6 +43,9 @@ void bc_apply_declared_contract(void)
           "BC_OPAQUE_BACKBUFFER" },
         { "game.bombchicken.progress-parser-v44", "BC_PROGRESS_FIX" },
         { "game.bombchicken.stencil8-v44", "BC_FORCE_STENCIL" },
+        { "adapter.gl-provider-probe-init-reexec", "BC_GLFIX" },
+        { "game.bombchicken.playerprefs-getstring-v44",
+          "BC_PREFS_STRING_FIX" },
     };
     const char *enabled = getenv("NXCOMPAT_ENABLED_QUIRKS");
 

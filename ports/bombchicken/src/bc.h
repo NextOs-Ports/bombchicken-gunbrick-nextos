@@ -110,6 +110,10 @@ void bc_jni_soft_input_closed(int canceled);
 int bc_prefs_get_string(const char *key, char *out, size_t size);
 int bc_prefs_set_string(const char *key, const char *value);
 
+/* Reparo de provider EGL/GLES cruzado (glfix.c), antes de qualquer video. */
+void bc_glfix_set_argv(char **argv);
+void bc_glfix_probe_before_video(void);
+
 /* The three arm64 objects, in load order. */
 int bc_load_modules(void);
 void bc_arm_frame_watchdog(void);

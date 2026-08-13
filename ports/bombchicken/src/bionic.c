@@ -484,6 +484,46 @@ static int my_stat(const char *path, struct stat *st)
     return r;
 }
 
+/* Sonda temporaria do PlayerPrefs v2: a Unity monta um caminho para
+ * "<algo>/<pkg>.v2.playerprefs" e falha em silencio.  Logar todo open/fopen
+ * cujo caminho fale de prefs revela o diretorio que falta (BC_PREF_TRACE=1). */
+static int pref_trace_enabled(void)
+{
+    static int cached = -1;
+    if (cached < 0) {
+        const char *flag = getenv("BC_PREF_TRACE");
+        cached = flag && *flag && strcmp(flag, "0") != 0;
+    }
+    return cached;
+}
+
+static FILE *my_fopen_traced(const char *path, const char *mode)
+{
+    FILE *f = fopen(path, mode);
+    if (pref_trace_enabled() && path &&
+        (strstr(path, "pref") || strstr(path, "Pref")))
+        fprintf(stderr, "[bc/pref] fopen(\"%s\", \"%s\") -> %s (errno=%d)\n",
+                path, mode ? mode : "?", f ? "ok" : "FALHOU", f ? 0 : errno);
+    return f;
+}
+
+static int my_open_traced(const char *path, int flags, ...)
+{
+    mode_t mode = 0;
+    if (flags & O_CREAT) {
+        va_list ap;
+        va_start(ap, flags);
+        mode = (mode_t)va_arg(ap, int);
+        va_end(ap);
+    }
+    int fd = open(path, flags, mode);
+    if (pref_trace_enabled() && path &&
+        (strstr(path, "pref") || strstr(path, "Pref")))
+        fprintf(stderr, "[bc/pref] open(\"%s\", %#x) -> %d (errno=%d)\n",
+                path, flags, fd, fd < 0 ? errno : 0);
+    return fd;
+}
+
 static DIR *my_opendir(const char *path)
 {
     DIR *d = opendir(path);
@@ -598,7 +638,8 @@ static nx_import tab[] = {
     M(fwrite), M(fread), M(fflush), M(fclose), M(feof), M(ferror),
     M(clearerr), M(fileno), M(setbuf), M(setvbuf), M(fseek), M(ftell),
     M(rewind), M(ungetc), M(vprintf),
-    E(fopen), E(fdopen), E(freopen), E(printf), E(snprintf), E(sprintf),
+    A("fopen", my_fopen_traced), E(fdopen), E(freopen), E(printf),
+    E(snprintf), E(sprintf),
     E(vsnprintf), E(vsprintf), E(asprintf), E(vasprintf), E(sscanf),
     E(vsscanf), E(fscanf), E(puts), E(putchar), E(remove), E(rename), E(tmpfile),
     E(fseeko), E(ftello), E(getline), E(getdelim), E(swprintf),
@@ -662,7 +703,8 @@ static nx_import tab[] = {
     M(getauxval), M(stat), M(opendir),
 
     /* files */
-    E(open), E(open64), E(openat), E(close), E(read), E(write), E(pread),
+    A("open", my_open_traced), E(open64), E(openat), E(close), E(read),
+    E(write), E(pread),
     E(pwrite), E(pread64), E(pwrite64), E(readv), E(writev), E(lseek),
     E(lseek64), E(fstat), E(lstat), E(fstatat), E(statfs),
     E(fstatfs), E(statvfs), E(fsync), E(fdatasync), E(ftruncate),
